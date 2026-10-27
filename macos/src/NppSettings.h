@@ -40,6 +40,12 @@ struct NppSettings
 	bool _toolbarShow = true;
 	int _toolbarIconSet = 0;                    // NppToolbarIconSet
 
+	// DarkMode (Notepad++: Light / Dark / Follow Windows -> Follow macOS)
+	bool _darkModeEnable = false;
+	bool _darkModeFollowOS = true;              // "enableWindowsMode"
+	std::string _darkThemeName = "DarkModeDefault.xml";
+	std::string _lightThemeName;                // empty = stylers.xml
+
 	// TabBar
 	bool _tabDragAndDrop = true;
 	bool _tabDrawTopBar = true;

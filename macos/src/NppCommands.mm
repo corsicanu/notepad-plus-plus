@@ -4,6 +4,7 @@
 
 #import "NppMainWindowInternal.h"
 #import "NppFindCharsInRange.h"
+#import "NppStyleConfigurator.h"
 
 #include "LangManager.h"
 #include "NppSettings.h"
@@ -647,6 +648,9 @@ namespace
 			[w applyLanguage: w.currentBuffer];
 		};
 	}
+
+	// ---- Settings ----
+	t[IDM_LANGSTYLE_CONFIG_DLG] = ^(NppMainWindow*) { [[NppStyleConfigurator shared] show]; };
 
 	// ---- ? ----
 	auto openURL = [](NSString* url) {

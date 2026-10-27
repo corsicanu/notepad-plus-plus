@@ -30,7 +30,9 @@ LEX_INC  := -I$(LEX)/include -I$(LEX)/lexlib
 GEN      := $(BUILD)/gen
 APP_INC  := $(SCI_INC) $(LEX_INC) -I$(NPP)/src/pugixml -Isrc -Icompat -I$(GEN) \
             -I$(NPP)/src -I$(NPP)/src/MISC/Common -I$(NPP)/src/MISC/PluginsManager \
-            -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange -I$(NPP)/src/uchardet
+            -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange -I$(NPP)/src/uchardet \
+            -I$(NPP)/src/WinControls/ColourPicker -I$(NPP)/src/WinControls/Preference -I$(NPP)/src/WinControls/shortcut \
+            -I$(NPP)/src/WinControls/Grid
 
 # --- Scintilla (core + Cocoa platform layer) -------------------------------
 SCI_SRC  := $(wildcard $(SCI)/src/*.cxx)
@@ -132,7 +134,7 @@ resources: $(EXE)
 	@cp $(NPP)/src/Notepad_plus.rc $(RES)/Notepad_plus.rc
 	@rsync -a --delete $(NPP)/src/icons/ $(RES)/icons/
 	@mkdir -p $(RES)/rc
-	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
+	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name '*Res.h' -o -name '*Resource.h' -o -name '*resource.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
 	@cp $(NPP)/installer/themes/*.xml $(RES)/themes/ 2>/dev/null || true
 	@cp $(NPP)/installer/nativeLang/*.xml $(RES)/localization/ 2>/dev/null || true
 	@for n in info_bar_bg mac_cursor_busy mac_cursor_flipped; do \

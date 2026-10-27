@@ -38,8 +38,12 @@ file formats, so they can be copied to/from a Windows `%APPDATA%\Notepad++`:
 - `backup/` — snapshots of unsaved documents ("Enable session snapshot and periodic backup",
   on by default as upstream): on quit nothing is asked; unsaved tabs come back next launch.
 
-One default differs on purpose: new documents use Unix (LF) line endings, Notepad++'s
-"OS default" on macOS.
+Two defaults differ on purpose: new documents use Unix (LF) line endings (Notepad++'s
+"OS default" on macOS), and the colour mode follows macOS (upstream defaults to Light;
+"Follow Windows" becomes "Follow macOS").
+
+`langs.xml` and `stylers.xml` are created in the settings folder from the bundled model files
+on first launch, exactly like upstream; user themes go to `themes/` there.
 
 ## Build
 
@@ -95,7 +99,7 @@ Current Document, `1636` Find All in Opened Documents, `1609` Replace All,
 - [x] **Phase 2** — menus generated from upstream, command-ID dispatch, Find / Replace / Find in Files / Mark (Normal, Extended, boost::regex), Search results panel, Incremental search, Find characters in range, Mark styles 1–5, bookmarked-line ops, change history, smart highlighting, generic `.rc` dialog loader
 - [x] **Phase 3** — `config.xml` / `session.xml` in upstream format, session restore, snapshot backups, Load/Save Session, files changed/deleted outside the editor, all Encoding-menu codepages, uchardet detection (upstream's load order)
 - [x] **Phase 4** — toolbar from upstream `toolBarIcons[]` + icon files (Fluent light/dark, filled, standard), tab context menu (upstream default or `tabContextMenu.xml`), editor context menu (`contextMenu.xml`, created from upstream's default), pinned tabs, tab colours, tab bar options from `config.xml`
-- [ ] **Phase 5** — themes, Style Configurator, dark mode
+- [x] **Phase 5** — Style Configurator (upstream `IDD_STYLER_DLG`, live edits, Save & Close / Cancel), themes from `themes/*.xml` (bundle + user dir), Global override, user keywords and user extensions, Light/Dark/Follow macOS mode with `lightThemeName` / `darkThemeName`, Windows-only theme fonts fall back to Menlo
 - [ ] **Phase 6** — Preferences dialog, localization (`nativeLang`)
 - [ ] **Phase 7** — split view (move/clone), remaining Edit operations, Column editor, multi-select
 - [ ] **Phase 8** — macros, Run menu, auto-completion and call tips, panels (Function list, Document list, Folder as Workspace, Document map, Project panels, Clipboard history, Character panel)

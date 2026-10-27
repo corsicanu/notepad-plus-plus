@@ -52,12 +52,15 @@ namespace
 			for (NSString* line in [text componentsSeparatedByString: @"\n"])
 			{
 				std::string l = trim(line.UTF8String);
-				if (l.rfind("#define", 0) != 0)
+				if (l.empty() || l[0] != '#')
+					continue;
+				l = trim(l.substr(1));          // "# define X" is valid too
+				if (l.rfind("define", 0) != 0)
 					continue;
 				size_t c = l.find("//");
 				if (c != std::string::npos)
 					l = l.substr(0, c);
-				l = trim(l.substr(7));
+				l = trim(l.substr(6));
 				size_t sp = l.find_first_of(" \t");
 				if (sp == std::string::npos)
 					continue;
@@ -415,6 +418,22 @@ namespace
 @interface NppRcFlippedView : NSView
 @end
 
+// Data source for LISTBOX / SysListView32 tables.
+@interface NppRcTableSource : NSObject <NSTableViewDataSource, NSTableViewDelegate>
+@property (nonatomic, copy) NSArray<NSString*>* items;
+@property (nonatomic, weak) id owner;
+@end
+
+@implementation NppRcTableSource
+- (NSInteger)numberOfRowsInTableView:(NSTableView*)tv { return _items.count; }
+- (id)tableView:(NSTableView*)tv objectValueForTableColumn:(NSTableColumn*)col row:(NSInteger)row { return _items[row]; }
+- (void)tableViewSelectionDidChange:(NSNotification*)n
+{
+	NSTableView* tv = n.object;
+	[_owner performSelector: @selector(controlAction:) withObject: tv];
+}
+@end
+
 @implementation NppRcFlippedView
 - (BOOL)isFlipped { return YES; }
 @end
@@ -428,6 +447,7 @@ namespace
 	NSMutableDictionary<NSNumber*, NSNumber*>* _radioGroups;
 	NSString* _caption;
 	BOOL _modal;
+	NSMutableDictionary<NSNumber*, NppRcTableSource*>* _tableSources;
 }
 
 + (int)symbolValue:(NSString*)name
@@ -669,9 +689,16 @@ namespace
 			col.width = r.size.width - 20;
 			[tv addTableColumn: col];
 			tv.headerView = nil;
-			tv.target = owner;
-			tv.action = @selector(controlAction:);
 			tv.tag = cid;
+			tv.rowHeight = 17;
+			if (!owner->_tableSources)
+				owner->_tableSources = [NSMutableDictionary dictionary];
+			NppRcTableSource* src = [[NppRcTableSource alloc] init];
+			src.owner = owner;
+			src.items = @[];
+			owner->_tableSources[@(cid)] = src;
+			tv.dataSource = src;
+			tv.delegate = src;
 			sv.documentView = tv;
 			view = sv;
 		}
@@ -772,6 +799,66 @@ namespace
 - (void)show:(int)ctrlId value:(BOOL)on
 {
 	[self item: ctrlId].hidden = !on;
+}
+
+#pragma mark - Lists
+
+- (NSTableView*)tableFor:(int)ctrlId
+{
+	NSView* v = [self item: ctrlId];
+	if ([v isKindOfClass: NSScrollView.class] && [((NSScrollView*)v).documentView isKindOfClass: NSTableView.class])
+		return ((NSScrollView*)v).documentView;
+	return nil;
+}
+
+- (void)setItems:(NSArray<NSString*>*)items forList:(int)ctrlId
+{
+	NSView* v = [self item: ctrlId];
+	if ([v isKindOfClass: NSPopUpButton.class])
+	{
+		[(NSPopUpButton*)v removeAllItems];
+		for (NSString* s in items)
+		{
+			// addItemWithTitle: drops duplicate titles; menus keep them.
+			[((NSPopUpButton*)v).menu addItemWithTitle: s action: nil keyEquivalent: @""];
+		}
+	}
+	else if ([v isKindOfClass: NSComboBox.class])
+	{
+		[(NSComboBox*)v removeAllItems];
+		[(NSComboBox*)v addItemsWithObjectValues: items];
+	}
+	else if (NSTableView* tv = [self tableFor: ctrlId])
+	{
+		_tableSources[@(ctrlId)].items = items;
+		[tv reloadData];
+	}
+}
+
+- (NSInteger)selectedIndex:(int)ctrlId
+{
+	NSView* v = [self item: ctrlId];
+	if ([v isKindOfClass: NSPopUpButton.class])
+		return ((NSPopUpButton*)v).indexOfSelectedItem;
+	if ([v isKindOfClass: NSComboBox.class])
+		return ((NSComboBox*)v).indexOfSelectedItem;
+	if (NSTableView* tv = [self tableFor: ctrlId])
+		return tv.selectedRow;
+	return -1;
+}
+
+- (void)select:(NSInteger)index inList:(int)ctrlId
+{
+	NSView* v = [self item: ctrlId];
+	if ([v isKindOfClass: NSPopUpButton.class])
+		[(NSPopUpButton*)v selectItemAtIndex: index];
+	else if ([v isKindOfClass: NSComboBox.class])
+		[(NSComboBox*)v selectItemAtIndex: index];
+	else if (NSTableView* tv = [self tableFor: ctrlId])
+	{
+		[tv selectRowIndexes: [NSIndexSet indexSetWithIndex: index] byExtendingSelection: NO];
+		[tv scrollRowToVisible: index];
+	}
 }
 
 #pragma mark - Commands

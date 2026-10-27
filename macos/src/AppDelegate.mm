@@ -6,6 +6,7 @@
 #import <objc/runtime.h>
 #import "NppMainWindow.h"
 #import "NppMenuBuilder.h"
+#import "NppTheme.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -151,6 +152,9 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
 {
+	[NppTheme applyMode];
+	// "Follow macOS": restyle when the system appearance changes.
+	[NSApp addObserver: self forKeyPath: @"effectiveAppearance" options: 0 context: nil];
 	_main = [[NppMainWindow alloc] init];
 	[_main showWindow: nil];
 
@@ -227,6 +231,12 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 		if (mi.submenu)
 			[self dumpMenu: mi.submenu depth: depth + 1];
 	}
+}
+
+- (void)observeValueForKeyPath:(NSString*)keyPath ofObject:(id)object change:(NSDictionary*)change context:(void*)context
+{
+	if (NppSettings::instance()._darkModeFollowOS)
+		[NppTheme applyMode];
 }
 
 // Renders every visible app window side by side into one PNG and quits;

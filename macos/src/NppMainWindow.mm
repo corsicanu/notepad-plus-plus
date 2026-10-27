@@ -3,6 +3,7 @@
 #import "NppIncrementalFind.h"
 #import "NppToolbar.h"
 #import "NppContextMenus.h"
+#import "NppTheme.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -106,6 +107,8 @@ namespace
 		[self startSnapshotTimer];
 		[NSNotificationCenter.defaultCenter addObserver: self selector: @selector(checkModifiedFiles)
 		                                           name: NSApplicationDidBecomeActiveNotification object: nil];
+		[NSNotificationCenter.defaultCenter addObserver: self selector: @selector(stylesChanged:)
+		                                           name: NppStylesChangedNotification object: nil];
 	}
 	return self;
 }
@@ -1046,6 +1049,20 @@ static NSString* withThousands(long n)
 	[_editor message: SCI_GETTEXTRANGEFULL wParam: 0 lParam: reinterpret_cast<sptr_t>(&tr)];
 	buf.resize(e - s);
 	return [NSString stringWithUTF8String: buf.c_str()] ?: @"";
+}
+
+#pragma mark - Styles
+
+// Theme switch / Style Configurator edit: restyle every view.
+- (void)stylesChanged:(NSNotification*)n
+{
+	NppBuffer* b = [self currentBuffer];
+	if (b)
+		[self applyLanguage: b];
+	if (_finder)
+		[_finder applyStyles];
+	[self refreshTabs];
+	[_editor setNeedsDisplay: YES];
 }
 
 #pragma mark - Toolbar

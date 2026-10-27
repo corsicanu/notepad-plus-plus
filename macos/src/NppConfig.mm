@@ -4,6 +4,7 @@
 #include "NppSettings.h"
 #include "NppUpstream.h"
 #include "NppXml.h"
+#include "LangManager.h"
 
 #include <algorithm>
 #include <cstring>
@@ -289,6 +290,24 @@ void NppConfig::load()
 	}
 	if (pugi::xml_node n = gui("StatusBar", false))
 		s._statusBarShow = text(n) != "hide";
+	if (pugi::xml_node n = gui("DarkMode", false))
+	{
+		s._darkModeEnable = getBool(n, "enable", s._darkModeEnable);
+		s._darkModeFollowOS = getBool(n, "enableWindowsMode", s._darkModeFollowOS);
+		s._darkThemeName = n.attribute("darkThemeName").as_string(s._darkThemeName.c_str());
+		s._lightThemeName = n.attribute("lightThemeName").as_string(s._lightThemeName.c_str());
+	}
+	if (pugi::xml_node n = gui("globalOverride", false))
+	{
+		GlobalOverride& go = LangManager::instance().globalOverride;
+		go.enableFg = getBool(n, "fg", false);
+		go.enableBg = getBool(n, "bg", false);
+		go.enableFont = getBool(n, "font", false);
+		go.enableFontSize = getBool(n, "fontSize", false);
+		go.enableBold = getBool(n, "bold", false);
+		go.enableItalic = getBool(n, "italic", false);
+		go.enableUnderLine = getBool(n, "underline", false);
+	}
 	if (pugi::xml_node n = gui("ToolBar", false))
 	{
 		s._toolbarShow = getBool(n, "visible", s._toolbarShow);
@@ -426,6 +445,22 @@ void NppConfig::save()
 	setBool(n, "reverseDefaultOrder", s._dateTimeReverseDefaultOrder);
 
 	setText(gui("StatusBar", true), s._statusBarShow ? "show" : "hide");
+
+	n = gui("DarkMode", true);
+	setBool(n, "enable", s._darkModeEnable);
+	setBool(n, "enableWindowsMode", s._darkModeFollowOS);
+	setAttr(n, "darkThemeName", s._darkThemeName.c_str());
+	setAttr(n, "lightThemeName", s._lightThemeName.c_str());
+
+	const GlobalOverride& go = LangManager::instance().globalOverride;
+	n = gui("globalOverride", true);
+	setBool(n, "fg", go.enableFg);
+	setBool(n, "bg", go.enableBg);
+	setBool(n, "font", go.enableFont);
+	setBool(n, "fontSize", go.enableFontSize);
+	setBool(n, "bold", go.enableBold);
+	setBool(n, "italic", go.enableItalic);
+	setBool(n, "underline", go.enableUnderLine);
 
 	n = gui("ToolBar", true);
 	setBool(n, "visible", s._toolbarShow);

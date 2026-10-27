@@ -36,6 +36,11 @@ typedef BOOL (^NppRcCommandHandler)(NppRcDialog* dlg, int ctrlId);
 - (void)enable:(int)ctrlId value:(BOOL)on;
 - (void)show:(int)ctrlId value:(BOOL)on;
 
+// Lists: NSPopUpButton (CBS_DROPDOWNLIST), NSComboBox, NSTableView (LISTBOX).
+- (void)setItems:(NSArray<NSString*>*)items forList:(int)ctrlId;
+- (NSInteger)selectedIndex:(int)ctrlId;
+- (void)select:(NSInteger)index inList:(int)ctrlId;
+
 - (void)showModeless;
 - (NSModalResponse)runModal;              // ends with IDOK / IDCANCEL
 - (void)endWith:(int)ctrlId;
