@@ -8,6 +8,7 @@
 #include "LangManager.h"
 #include "NppSettings.h"
 #include "NppUpstream.h"
+#include "EncodingMapper.h"
 
 #include <functional>
 #include <unordered_map>
@@ -18,8 +19,9 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 + (const std::unordered_map<int, NppCommandHandler>&)commandTable;
 - (void)toggleLineComment;
 - (void)convertEOL:(NppEOL)eol;
-- (void)reinterpretAs:(NppEncoding)enc;
-- (void)convertTo:(NppEncoding)enc;
+- (void)encodeIn:(int)cmd;
+- (void)encodeInCodepage:(int)cmd;
+- (void)convertTo:(int)cmd;
 - (void)markAllWithStyle:(int)ind;
 - (void)jumpToBookmark:(BOOL)forward;
 - (void)changeHistoryGoTo:(BOOL)next;
@@ -324,6 +326,17 @@ namespace
 	t[IDM_FILE_CLOSEALL_TORIGHT] = ^(NppMainWindow* w) { closeWhere(w, ^BOOL(NppBuffer*, NSInteger rel) { return rel <= 0; }); };
 	t[IDM_FILE_CLOSEALL_UNCHANGED] = ^(NppMainWindow* w) { closeWhere(w, ^BOOL(NppBuffer* b, NSInteger) { return b.dirty || !b.path; }); };
 	t[IDM_FILE_DELETE] = ^(NppMainWindow* w) { [w deleteCurrentFile]; };
+	t[IDM_FILE_LOADSESSION] = ^(NppMainWindow* w) {
+		NSOpenPanel* p = [NSOpenPanel openPanel];
+		if ([p runModal] == NSModalResponseOK)
+			[w loadSessionFromPath: p.URL.path];
+	};
+	t[IDM_FILE_SAVESESSION] = ^(NppMainWindow* w) {
+		NSSavePanel* p = [NSSavePanel savePanel];
+		p.nameFieldStringValue = @"session.xml";
+		if ([p runModal] == NSModalResponseOK)
+			[w saveSessionToPath: p.URL.path withBackups: NO];
+	};
 	t[IDM_FILE_EXIT] = ^(NppMainWindow* w) { [NSApp terminate: nil]; };
 	t[IDM_FILE_RESTORELASTCLOSEDFILE] = ^(NppMainWindow* w) { [w restoreLastClosedFile]; };
 	t[IDM_OPEN_ALL_RECENT_FILE] = ^(NppMainWindow* w) { [w openPaths: [NppMainWindow recentFiles]]; };
@@ -583,16 +596,13 @@ namespace
 	};
 
 	// ---- Encoding ----
-	t[IDM_FORMAT_ANSI] = ^(NppMainWindow* w) { [w reinterpretAs: NppEncodingANSI]; };
-	t[IDM_FORMAT_AS_UTF_8] = ^(NppMainWindow* w) { [w reinterpretAs: NppEncodingUTF8]; };
-	t[IDM_FORMAT_UTF_8] = ^(NppMainWindow* w) { [w reinterpretAs: NppEncodingUTF8BOM]; };
-	t[IDM_FORMAT_UTF_16BE] = ^(NppMainWindow* w) { [w reinterpretAs: NppEncodingUTF16BE]; };
-	t[IDM_FORMAT_UTF_16LE] = ^(NppMainWindow* w) { [w reinterpretAs: NppEncodingUTF16LE]; };
-	t[IDM_FORMAT_CONV2_ANSI] = ^(NppMainWindow* w) { [w convertTo: NppEncodingANSI]; };
-	t[IDM_FORMAT_CONV2_AS_UTF_8] = ^(NppMainWindow* w) { [w convertTo: NppEncodingUTF8]; };
-	t[IDM_FORMAT_CONV2_UTF_8] = ^(NppMainWindow* w) { [w convertTo: NppEncodingUTF8BOM]; };
-	t[IDM_FORMAT_CONV2_UTF_16BE] = ^(NppMainWindow* w) { [w convertTo: NppEncodingUTF16BE]; };
-	t[IDM_FORMAT_CONV2_UTF_16LE] = ^(NppMainWindow* w) { [w convertTo: NppEncodingUTF16LE]; };
+	for (int id : {IDM_FORMAT_ANSI, IDM_FORMAT_AS_UTF_8, IDM_FORMAT_UTF_8, IDM_FORMAT_UTF_16BE, IDM_FORMAT_UTF_16LE})
+		t[id] = ^(NppMainWindow* w) { [w encodeIn: id]; };
+	for (int id : {IDM_FORMAT_CONV2_ANSI, IDM_FORMAT_CONV2_AS_UTF_8, IDM_FORMAT_CONV2_UTF_8, IDM_FORMAT_CONV2_UTF_16BE, IDM_FORMAT_CONV2_UTF_16LE})
+		t[id] = ^(NppMainWindow* w) { [w convertTo: id]; };
+	for (int id = IDM_FORMAT_ENCODE; id <= IDM_FORMAT_ENCODE_END; ++id)
+		if (EncodingMapper::getInstance().getEncodingFromIndex(id - IDM_FORMAT_ENCODE) != -1)
+			t[id] = ^(NppMainWindow* w) { [w encodeInCodepage: id]; };
 
 	// ---- Language ----
 	for (int id = IDM_LANG; id < IDM_LANG + 200; ++id)
@@ -695,38 +705,133 @@ namespace
 	[self updateStatusBar];
 }
 
-- (void)reinterpretAs:(NppEncoding)enc
+// Text codec of a buffer: its codepage, ANSI for uni8Bit/uni7Bit, else UTF-8.
+static int textCodepage(NppBuffer* b)
+{
+	if (b.encoding != -1)
+		return b.encoding;
+	return (b.unicodeMode == uni8Bit || b.unicodeMode == uni7Bit) ? [NppBuffer ansiCodepage] : SC_CP_UTF8;
+}
+
+// Upstream asks before an encoding change that reloads from disk.
+- (BOOL)confirmEncodingReload
 {
 	NppBuffer* b = [self currentBuffer];
-	if (b.encoding == enc)
-		return;
-	if (b.path && !b.dirty)
+	auto ask = [](NSString* title) {
+		NSAlert* a = [[NSAlert alloc] init];
+		a.messageText = title;
+		a.informativeText = @"You should save the current modification.\rAll the saved modifications cannot be undone.\r\rContinue?";
+		[a addButtonWithTitle: @"Yes"];
+		[a addButtonWithTitle: @"No"];
+		return [a runModal] == NSAlertFirstButtonReturn;
+	};
+	if (b.dirty)
 	{
-		// Re-read the file's bytes with the chosen encoding.
-		[self.editor message: SCI_SETREADONLY wParam: 0];
-		[b loadFromPath: b.path editor: self.editor forcedEncoding: enc error: nil];
-		[self activateBuffer: self.currentIndex];
+		if (!ask(@"Save Current Modification"))
+			return NO;
+		[self saveBuffer: b as: NO];
+		sci(self.editor, SCI_EMPTYUNDOBUFFER);
 	}
-	else
+	if (sci(self.editor, SCI_CANUNDO) && !ask(@"Lose Undo Ability Warning"))
+		return NO;
+	return YES;
+}
+
+// Port of NppCommands IDM_FORMAT_ANSI / AS_UTF_8 / UTF_8 / UTF_16BE / UTF_16LE.
+- (void)encodeIn:(int)cmd
+{
+	NppBuffer* b = [self currentBuffer];
+	int originalUm = b.unicodeMode;
+	int um;
+	bool shouldBeDirty = true;
+	switch (cmd)
 	{
-		b.encoding = enc;
+		case IDM_FORMAT_AS_UTF_8: shouldBeDirty = originalUm != uni8Bit; um = uniUTF8_NoBOM; break;
+		case IDM_FORMAT_UTF_8: um = uniUTF8; break;
+		case IDM_FORMAT_UTF_16BE: um = uni16BE; break;
+		case IDM_FORMAT_UTF_16LE: um = uni16LE; break;
+		default: shouldBeDirty = originalUm != uniUTF8_NoBOM; um = uni8Bit; break;
+	}
+
+	if (b.encoding != -1)
+	{
+		if (!b.path || ![self confirmEncodingReload])
+			return;
+		// Reload the bytes without codepage auto-detection.
+		NppSettings& s = NppSettings::instance();
+		bool detect = s._detectEncoding;
+		s._detectEncoding = false;
+		[b loadFromPath: b.path editor: self.editor forcedEncoding: -1 error: nil];
+		s._detectEncoding = detect;
+		[self activateBuffer: self.currentIndex];
+		return;
+	}
+
+	if (originalUm == um)
+		return;
+	// In Notepad++ ANSI documents hold raw bytes, so switching between ANSI and
+	// a Unicode mode reinterprets them; here the text is re-decoded instead.
+	int from = textCodepage(b);
+	b.unicodeMode = um;
+	int to = textCodepage(b);
+	if (from != to)
+		[b reinterpretFromCodepage: from toCodepage: to editor: self.editor];
+	if (shouldBeDirty)
+		b.dirty = YES;
+	[self refreshTabs];
+	[self updateTitle];
+	[self updateStatusBar];
+}
+
+// Port of NppCommands IDM_FORMAT_WIN_1250 ... IDM_FORMAT_KOI8R_CYRILLIC.
+- (void)encodeInCodepage:(int)cmd
+{
+	int encoding = EncodingMapper::getInstance().getEncodingFromIndex(cmd - IDM_FORMAT_ENCODE);
+	if (encoding == -1)
+		return;
+	NppBuffer* b = [self currentBuffer];
+	if (!b.path)
+	{
+		int from = textCodepage(b);
+		b.encoding = encoding;
+		b.unicodeMode = uniUTF8_NoBOM;
+		[b reinterpretFromCodepage: from toCodepage: encoding editor: self.editor];
 		[self updateStatusBar];
+		return;
+	}
+	if (![self confirmEncodingReload])
+		return;
+	if (!b.dirty)
+	{
+		[b loadFromPath: b.path editor: self.editor forcedEncoding: encoding error: nil];
+		[self activateBuffer: self.currentIndex];
 	}
 }
 
-- (void)convertTo:(NppEncoding)enc
+// Port of NppCommands IDM_FORMAT_CONV2_*: the text stays, the file encoding changes.
+- (void)convertTo:(int)cmd
 {
 	NppBuffer* b = [self currentBuffer];
-	if (b.encoding == enc)
-		return;
-	b.encoding = enc;
-	// Converting is an edit in Notepad++: the file must be saved to apply it.
-	if (!b.dirty)
+	int um = 0;
+	switch (cmd)
 	{
-		b.dirty = YES;
-		[self refreshTabs];
-		[self updateTitle];
+		case IDM_FORMAT_CONV2_ANSI:
+			if (b.encoding != -1 || b.unicodeMode == uni8Bit)
+				return;
+			um = uni8Bit;
+			break;
+		case IDM_FORMAT_CONV2_AS_UTF_8: um = uniUTF8_NoBOM; break;
+		case IDM_FORMAT_CONV2_UTF_8: um = uniUTF8; break;
+		case IDM_FORMAT_CONV2_UTF_16BE: um = uni16BE; break;
+		case IDM_FORMAT_CONV2_UTF_16LE: um = uni16LE; break;
 	}
+	if (b.encoding == -1 && b.unicodeMode == um)
+		return;
+	b.encoding = -1;
+	b.unicodeMode = um;
+	b.dirty = YES;
+	[self refreshTabs];
+	[self updateTitle];
 	[self updateStatusBar];
 }
 
@@ -855,11 +960,11 @@ namespace
 		case IDM_VIEW_ALWAYSONTOP: check(self.window.level == NSFloatingWindowLevel); break;
 		case IDM_VIEW_FULLSCREENTOGGLE: check((self.window.styleMask & NSWindowStyleMaskFullScreen) != 0); break;
 		case IDM_EDIT_TOGGLEREADONLY: check(b.readOnly); break;
-		case IDM_FORMAT_ANSI: check(b.encoding == NppEncodingANSI); break;
-		case IDM_FORMAT_AS_UTF_8: check(b.encoding == NppEncodingUTF8); break;
-		case IDM_FORMAT_UTF_8: check(b.encoding == NppEncodingUTF8BOM); break;
-		case IDM_FORMAT_UTF_16BE: check(b.encoding == NppEncodingUTF16BE); break;
-		case IDM_FORMAT_UTF_16LE: check(b.encoding == NppEncodingUTF16LE); break;
+		case IDM_FORMAT_ANSI: check(b.encoding == -1 && (b.unicodeMode == uni8Bit || b.unicodeMode == uni7Bit)); break;
+		case IDM_FORMAT_AS_UTF_8: check(b.encoding == -1 && b.unicodeMode == uniUTF8_NoBOM); break;
+		case IDM_FORMAT_UTF_8: check(b.encoding == -1 && b.unicodeMode == uniUTF8); break;
+		case IDM_FORMAT_UTF_16BE: check(b.encoding == -1 && (b.unicodeMode == uni16BE || b.unicodeMode == uni16BE_NoBOM)); break;
+		case IDM_FORMAT_UTF_16LE: check(b.encoding == -1 && (b.unicodeMode == uni16LE || b.unicodeMode == uni16LE_NoBOM)); break;
 		// The current EOL format is shown disabled, as in Notepad++.
 		case IDM_FORMAT_TODOS: return b.eol != NppEOLWindows;
 		case IDM_FORMAT_TOUNIX: return b.eol != NppEOLUnix;
@@ -876,7 +981,9 @@ namespace
 		case IDM_SEARCH_GOTOPREVFOUND:
 			return [self finderVisible];
 		default:
-			if (cmd >= IDM_LANG && cmd < IDM_LANG + 200)
+			if (cmd >= IDM_FORMAT_ENCODE && cmd <= IDM_FORMAT_ENCODE_END)
+				check(b.encoding != -1 && EncodingMapper::getInstance().getIndexFromEncoding(b.encoding) == cmd - IDM_FORMAT_ENCODE);
+			else if (cmd >= IDM_LANG && cmd < IDM_LANG + 200)
 				check(LangManager::instance().langTypeOf(b.lang) == Notepad_plus::menuID2LangType(cmd));
 			break;
 	}

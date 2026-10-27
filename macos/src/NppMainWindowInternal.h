@@ -54,4 +54,18 @@ enum
 - (BOOL)finderVisible;
 - (NSString*)selectedTextOrWord:(BOOL)expandToWord;
 
+- (void)saveCurrentViewState;
+- (NppBuffer*)openSessionFile:(NSString*)file backup:(NSString*)backup encoding:(int)encoding;
+
+@end
+
+@interface NppMainWindow (Session)
+- (void)applySettingsToEditor:(ScintillaView*)e;
+- (void)captureEditorSettings;
+- (void)restoreWindowFrame;
+- (void)startSnapshotTimer;
+- (void)saveSessionToPath:(NSString*)path withBackups:(BOOL)withBackups;
+- (void)loadSessionFromPath:(NSString*)path;
+- (void)checkModifiedFiles;
+- (void)snapshotTick:(NSTimer*)t;
 @end

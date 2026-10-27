@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <strings.h>
 
 #ifndef __OBJC__
 typedef int BOOL; // Objective-C has its own BOOL
@@ -164,6 +165,9 @@ typedef wchar_t TCHAR;
 #define VK_OEM_6 0xDD
 #define VK_OEM_7 0xDE
 #define VK_OEM_102 0xE2
+
+inline int _stricmp(const char* a, const char* b) { return strcasecmp(a, b); }
+inline int _strnicmp(const char* a, const char* b, size_t n) { return strncasecmp(a, b, n); }
 
 inline char* _itoa(int value, char* buffer, int radix)
 {

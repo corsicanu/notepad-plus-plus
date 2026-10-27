@@ -1,23 +1,172 @@
 #import "NppBuffer.h"
 
-#include "Scintilla.h"
+#include "NppUpstream.h"
+#include "NppSettings.h"
+#include "EncodingMapper.h"
+#include "uchardet.h"
+
+namespace
+{
+	enum u78 { utf8NoBOM = 0, ascii7bits = 1, ascii8bits = 2 };
+
+	// Port of Utf8_16_Read::utf8_7bits_8bits.
+	u78 utf8_7bits_8bits(const unsigned char* sx, size_t len)
+	{
+		int rv = 1;
+		int ASCII7only = 1;
+		const unsigned char* endx = sx + len;
+		while (sx < endx)
+		{
+			if (*sx == '\0')
+			{
+				ASCII7only = 0;
+				rv = 0;
+				break;
+			}
+			else if ((*sx & 0x80) == 0x0)
+				++sx;
+			else if ((*sx & (0x80 + 0x40)) == 0x80)
+			{
+				ASCII7only = 0;
+				rv = 0;
+				break;
+			}
+			else if ((*sx & (0x80 + 0x40 + 0x20)) == (0x80 + 0x40))
+			{
+				ASCII7only = 0;
+				if (endx - sx < 2 || (sx[1] & (0x80 + 0x40)) != 0x80) { rv = 0; break; }
+				sx += 2;
+			}
+			else if ((*sx & (0x80 + 0x40 + 0x20 + 0x10)) == (0x80 + 0x40 + 0x20))
+			{
+				ASCII7only = 0;
+				if (endx - sx < 3 || (sx[1] & (0x80 + 0x40)) != 0x80 || (sx[2] & (0x80 + 0x40)) != 0x80) { rv = 0; break; }
+				sx += 3;
+			}
+			else if ((*sx & (0x80 + 0x40 + 0x20 + 0x10 + 0x8)) == (0x80 + 0x40 + 0x20 + 0x10))
+			{
+				ASCII7only = 0;
+				if (endx - sx < 4 || (sx[1] & (0x80 + 0x40)) != 0x80 || (sx[2] & (0x80 + 0x40)) != 0x80 || (sx[3] & (0x80 + 0x40)) != 0x80) { rv = 0; break; }
+				sx += 4;
+			}
+			else
+			{
+				ASCII7only = 0;
+				rv = 0;
+				break;
+			}
+		}
+		if (ASCII7only)
+			return ascii7bits;
+		if (rv)
+			return utf8NoBOM;
+		return ascii8bits;
+	}
+
+	// Rough stand-in for Win32 IsTextUnicode(IS_TEXT_UNICODE_STATISTICS) on "x\0x\0" data.
+	bool looksLikeUtf16LE(const unsigned char* p, size_t len)
+	{
+		if (len < 2 || len % 2 != 0 || p[0] == 0 || p[1] != 0)
+			return false;
+		size_t zeroOdd = 0, n = std::min<size_t>(len, 4096);
+		for (size_t i = 1; i < n; i += 2)
+			if (p[i] == 0)
+				++zeroOdd;
+		return zeroOdd * 2 >= (n / 2) * 2 * 9 / 10;
+	}
+
+	// Port of Utf8_16_Read::determineEncoding (skip = BOM length).
+	UniMode determineEncoding(const unsigned char* p, size_t len, size_t& skip)
+	{
+		skip = 0;
+		if (len > 1 && p[0] == 0xFE && p[1] == 0xFF) { skip = 2; return uni16BE; }
+		if (len > 1 && p[0] == 0xFF && p[1] == 0xFE) { skip = 2; return uni16LE; }
+		if (len > 2 && p[0] == 0xEF && p[1] == 0xBB && p[2] == 0xBF) { skip = 3; return uniUTF8; }
+		if (looksLikeUtf16LE(p, len))
+			return uni16LE_NoBOM;
+		u78 d = utf8_7bits_8bits(p, len);
+		if (d == utf8NoBOM)
+			return uniUTF8_NoBOM;
+		if (d == ascii7bits)
+			return uni7Bit;
+		return uni8Bit;
+	}
+
+	// Port of FileManager::detectCodepage.
+	int detectCodepage(const char* buf, size_t len)
+	{
+		int codepage = -1;
+		uchardet_t ud = uchardet_new();
+		uchardet_handle_data(ud, buf, len);
+		uchardet_data_end(ud);
+		const char* cs = uchardet_get_charset(ud);
+		if (strcasecmp(cs, "TIS-620") != 0)
+			codepage = EncodingMapper::getInstance().getEncodingFromString(cs);
+		uchardet_delete(ud);
+		return codepage;
+	}
+
+	NSStringEncoding nsEncodingForCodepage(int cp)
+	{
+		switch (cp)
+		{
+			case 51949: return CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingEUC_KR);
+			case 10007: return CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingMacCyrillic);
+			case 20866: return CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingKOI8_R);
+			case 21866: return CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingKOI8_U);
+			case 936: return CFStringConvertEncodingToNSStringEncoding(kCFStringEncodingGB_18030_2000);
+		}
+		CFStringEncoding cf = CFStringConvertWindowsCodepageToEncoding(cp);
+		if (cf == kCFStringEncodingInvalidId)
+			return NSWindowsCP1252StringEncoding;
+		return CFStringConvertEncodingToNSStringEncoding(cf);
+	}
+
+	NppEOL detectEOL(const char* p, size_t len, NppEOL fallback)
+	{
+		for (size_t i = 0; i < len; ++i)
+		{
+			if (p[i] == '\r')
+				return (i + 1 < len && p[i + 1] == '\n') ? NppEOLWindows : NppEOLMac;
+			if (p[i] == '\n')
+				return NppEOLUnix;
+		}
+		return fallback;
+	}
+
+	NSData* utf16ToUtf8(NSData* d, bool bigEndian)
+	{
+		NSString* s = [[NSString alloc] initWithData: d encoding: bigEndian ? NSUTF16BigEndianStringEncoding : NSUTF16LittleEndianStringEncoding];
+		return [s dataUsingEncoding: NSUTF8StringEncoding] ?: [NSData data];
+	}
+}
 
 @implementation NppBuffer
 {
 	void* _document;
 }
 
-+ (NSString*)encodingName:(NppEncoding)encoding
++ (int)ansiCodepage
 {
-	switch (encoding)
-	{
-		case NppEncodingANSI: return @"ANSI";
-		case NppEncodingUTF8: return @"UTF-8";
-		case NppEncodingUTF8BOM: return @"UTF-8-BOM";
-		case NppEncodingUTF16BE: return @"UTF-16 BE BOM";
-		case NppEncodingUTF16LE: return @"UTF-16 LE BOM";
-	}
-	return nil;
+	return 1252;
+}
+
++ (NSData*)decode:(NSData*)bytes codepage:(int)cp
+{
+	if (cp == SC_CP_UTF8)
+		return bytes;
+	NSString* s = [[NSString alloc] initWithData: bytes encoding: nsEncodingForCodepage(cp)];
+	if (!s)
+		s = [[NSString alloc] initWithData: bytes encoding: NSISOLatin1StringEncoding];
+	return [s dataUsingEncoding: NSUTF8StringEncoding] ?: [NSData data];
+}
+
++ (NSData*)encode:(NSData*)utf8 codepage:(int)cp
+{
+	if (cp == SC_CP_UTF8)
+		return utf8;
+	NSString* s = [[NSString alloc] initWithData: utf8 encoding: NSUTF8StringEncoding] ?: @"";
+	return [s dataUsingEncoding: nsEncodingForCodepage(cp) allowLossyConversion: YES] ?: [NSData data];
 }
 
 - (instancetype)initWithEditor:(ScintillaView*)editor
@@ -25,9 +174,11 @@
 	if ((self = [super init]))
 	{
 		_document = reinterpret_cast<void*>([editor message: SCI_CREATEDOCUMENT wParam: 0 lParam: SC_DOCUMENTOPTION_DEFAULT]);
-		_encoding = NppEncodingUTF8;
-		_eol = NppEOLUnix;
-		_lang = LangManager::instance().languageByName("normal");
+		const NppSettings& s = NppSettings::instance();
+		_unicodeMode = s._newDocUnicodeMode;
+		_encoding = -1;
+		_eol = (NppEOL)s._newDocFormat;
+		_lang = LangManager::instance().languageByType(s._newDocLang) ?: LangManager::instance().languageByName("normal");
 		_untitledName = @"new 1";
 	}
 	return self;
@@ -52,119 +203,77 @@
 	}
 }
 
-static BOOL isValidUTF8(const unsigned char* p, NSUInteger len)
-{
-	NSUInteger i = 0;
-	while (i < len)
-	{
-		unsigned char c = p[i];
-		int extra;
-		if (c < 0x80) { ++i; continue; }
-		else if ((c & 0xE0) == 0xC0 && c >= 0xC2) extra = 1;
-		else if ((c & 0xF0) == 0xE0) extra = 2;
-		else if ((c & 0xF8) == 0xF0 && c <= 0xF4) extra = 3;
-		else return NO;
-		for (int k = 1; k <= extra; ++k)
-			if (i + k >= len || (p[i + k] & 0xC0) != 0x80)
-				return NO;
-		i += extra + 1;
-	}
-	return YES;
-}
-
-static NppEOL detectEOL(const char* p, size_t len)
-{
-	for (size_t i = 0; i < len; ++i)
-	{
-		if (p[i] == '\r')
-			return (i + 1 < len && p[i + 1] == '\n') ? NppEOLWindows : NppEOLMac;
-		if (p[i] == '\n')
-			return NppEOLUnix;
-	}
-	// Notepad++ default for new documents on Windows is CRLF; on macOS LF is the norm.
-	return NppEOLUnix;
-}
-
 - (BOOL)loadFromPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error
 {
 	return [self loadFromPath: path editor: editor forcedEncoding: -1 error: error];
 }
 
-- (BOOL)loadFromPath:(NSString*)path editor:(ScintillaView*)editor forcedEncoding:(NSInteger)forced error:(NSError**)error
+// Port of FileManager::loadFileData / copyFileContentToScintilla / resolveLoadedEncoding.
+- (BOOL)loadFromPath:(NSString*)path editor:(ScintillaView*)editor forcedEncoding:(int)forced error:(NSError**)error
 {
-	NSData* data = [NSData dataWithContentsOfFile: path options: 0 error: error];
+	NSData* data = [NSData dataWithContentsOfFile: path options: NSDataReadingMappedIfSafe error: error];
 	if (!data)
 		return NO;
 
+	const NppSettings& settings = NppSettings::instance();
 	const unsigned char* bytes = static_cast<const unsigned char*>(data.bytes);
-	NSUInteger len = data.length;
-	NSData* utf8 = nil;
+	size_t len = data.length;
 
-	auto skipBOM = [&](NSUInteger n, const char* bom) {
-		return (len >= n && memcmp(bytes, bom, n) == 0) ? [data subdataWithRange: NSMakeRange(n, len - n)] : data;
-	};
-	if (forced >= 0)
+	int encoding = forced;
+	size_t skip = 0;
+	UniMode bomMode = determineEncoding(bytes, len, skip);
+	bool hasBOM = bomMode == uniUTF8 || bomMode == uni16BE || bomMode == uni16LE;
+	if (hasBOM)
+		encoding = -1;
+	else if (encoding == -1 && settings._detectEncoding)
+		encoding = detectCodepage(static_cast<const char*>(data.bytes), std::min<size_t>(len, 1024 * 1024));
+
+	NSData* utf8 = nil;
+	UniMode um = bomMode;
+	if (encoding != -1)
 	{
-		_encoding = (NppEncoding)forced;
-		NSString* s = nil;
-		switch (_encoding)
-		{
-			case NppEncodingANSI:
-				s = [[NSString alloc] initWithData: data encoding: NSWindowsCP1252StringEncoding] ?: [[NSString alloc] initWithData: data encoding: NSISOLatin1StringEncoding];
-				break;
-			case NppEncodingUTF8:
-			case NppEncodingUTF8BOM:
-				utf8 = skipBOM(3, "\xEF\xBB\xBF");
-				break;
-			case NppEncodingUTF16BE:
-				s = [[NSString alloc] initWithData: skipBOM(2, "\xFE\xFF") encoding: NSUTF16BigEndianStringEncoding];
-				break;
-			case NppEncodingUTF16LE:
-				s = [[NSString alloc] initWithData: skipBOM(2, "\xFF\xFE") encoding: NSUTF16LittleEndianStringEncoding];
-				break;
-		}
-		if (s)
-			utf8 = [s dataUsingEncoding: NSUTF8StringEncoding];
-	}
-	else if (len >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-	{
-		_encoding = NppEncodingUTF8BOM;
-		utf8 = [data subdataWithRange: NSMakeRange(3, len - 3)];
-	}
-	else if (len >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-	{
-		_encoding = NppEncodingUTF16BE;
-		NSString* s = [[NSString alloc] initWithData: [data subdataWithRange: NSMakeRange(2, len - 2)] encoding: NSUTF16BigEndianStringEncoding];
-		utf8 = [s dataUsingEncoding: NSUTF8StringEncoding];
-	}
-	else if (len >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-	{
-		_encoding = NppEncodingUTF16LE;
-		NSString* s = [[NSString alloc] initWithData: [data subdataWithRange: NSMakeRange(2, len - 2)] encoding: NSUTF16LittleEndianStringEncoding];
-		utf8 = [s dataUsingEncoding: NSUTF8StringEncoding];
-	}
-	else if (isValidUTF8(bytes, len))
-	{
-		_encoding = NppEncodingUTF8;
-		utf8 = data;
+		utf8 = [NppBuffer decode: data codepage: encoding];
+		// resolveLoadedEncoding: a codepage (or UTF-8 indicator) means UTF-8 text inside.
+		if (encoding == SC_CP_UTF8)
+			encoding = -1;
+		um = uniUTF8_NoBOM;
 	}
 	else
 	{
-		_encoding = NppEncodingANSI;
-		NSString* s = [[NSString alloc] initWithData: data encoding: NSWindowsCP1252StringEncoding];
-		if (!s)
-			s = [[NSString alloc] initWithData: data encoding: NSISOLatin1StringEncoding];
-		utf8 = [s dataUsingEncoding: NSUTF8StringEncoding];
+		NSData* body = [data subdataWithRange: NSMakeRange(skip, len - skip)];
+		switch (bomMode)
+		{
+			case uni16BE:
+			case uni16BE_NoBOM:
+				utf8 = utf16ToUtf8(body, true);
+				break;
+			case uni16LE:
+			case uni16LE_NoBOM:
+				utf8 = utf16ToUtf8(body, false);
+				break;
+			case uni8Bit:
+				utf8 = [NppBuffer decode: body codepage: [NppBuffer ansiCodepage]];
+				break;
+			default:
+				utf8 = body;
+				break;
+		}
+		if (um == uni7Bit)
+			um = settings._openAnsiAsUtf8 ? uniUTF8_NoBOM : uni8Bit;
 	}
-	if (!utf8)
-		utf8 = [NSData data];
+
+	// Empty files take the "new document" encoding when it is UTF-8 and ANSI files open as UTF-8.
+	if (len == 0 && settings._newDocUnicodeMode == uniUTF8_NoBOM && settings._openAnsiAsUtf8)
+		um = uniUTF8_NoBOM;
 
 	const char* text = static_cast<const char*>(utf8.bytes);
-	_eol = detectEOL(text, utf8.length);
+	_eol = detectEOL(text, utf8.length, (NppEOL)settings._newDocFormat);
 
+	[editor message: SCI_SETREADONLY wParam: 0];
 	[editor message: SCI_SETCODEPAGE wParam: SC_CP_UTF8];
 	[editor message: SCI_SETUNDOCOLLECTION wParam: 0];
 	[editor message: SCI_CLEARALL];
+	[editor message: SCI_ALLOCATE wParam: utf8.length];
 	[editor message: SCI_APPENDTEXT wParam: utf8.length lParam: reinterpret_cast<sptr_t>(text)];
 	[editor message: SCI_SETUNDOCOLLECTION wParam: 1];
 	[editor message: SCI_EMPTYUNDOBUFFER];
@@ -172,11 +281,53 @@ static NppEOL detectEOL(const char* p, size_t len)
 	[editor message: SCI_SETEOLMODE wParam: _eol];
 	[editor message: SCI_GOTOPOS wParam: 0];
 
+	_unicodeMode = um;
+	_encoding = encoding;
 	_path = [path copy];
 	_dirty = NO;
-	_readOnly = ![[NSFileManager defaultManager] isWritableFileAtPath: path];
+	_fileReadOnly = ![NSFileManager.defaultManager isWritableFileAtPath: path];
 	_lang = LangManager::instance().languageForPath(path.fileSystemRepresentation);
+	[self updateTimestamp];
 	return YES;
+}
+
+- (NSData*)bytesForSavingFrom:(ScintillaView*)editor
+{
+	sptr_t len = [editor message: SCI_GETLENGTH];
+	const char* raw = reinterpret_cast<const char*>([editor message: SCI_GETCHARACTERPOINTER]);
+	NSData* text = [NSData dataWithBytes: raw length: len];
+
+	if (_encoding != -1)
+		return [NppBuffer encode: text codepage: _encoding];
+
+	NSMutableData* out = [NSMutableData data];
+	switch (_unicodeMode)
+	{
+		case uniUTF8:
+			[out appendBytes: "\xEF\xBB\xBF" length: 3];
+			[out appendData: text];
+			break;
+		case uni16BE:
+		case uni16LE:
+		case uni16BE_NoBOM:
+		case uni16LE_NoBOM:
+		{
+			bool be = _unicodeMode == uni16BE || _unicodeMode == uni16BE_NoBOM;
+			if (_unicodeMode == uni16BE || _unicodeMode == uni16LE)
+				[out appendBytes: be ? "\xFE\xFF" : "\xFF\xFE" length: 2];
+			NSString* s = [[NSString alloc] initWithData: text encoding: NSUTF8StringEncoding] ?: @"";
+			[out appendData: [s dataUsingEncoding: be ? NSUTF16BigEndianStringEncoding : NSUTF16LittleEndianStringEncoding]];
+			break;
+		}
+		case uni8Bit:
+		case uni7Bit:
+			[out appendData: [NppBuffer encode: text codepage: [NppBuffer ansiCodepage]]];
+			break;
+		default:
+			[out appendData: text];
+			break;
+	}
+	return out;
 }
 
 - (BOOL)saveToPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error
@@ -186,42 +337,57 @@ static NppEOL detectEOL(const char* p, size_t len)
 	[editor message: SCI_SETSAVEPOINT];
 	_path = [path copy];
 	_dirty = NO;
-	_readOnly = NO;
+	_fileReadOnly = NO;
+	[self updateTimestamp];
 	return YES;
 }
 
 - (BOOL)writeCopyToPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error
 {
+	return [[self bytesForSavingFrom: editor] writeToFile: path options: NSDataWritingAtomic error: error];
+}
+
+- (void)reinterpretFromCodepage:(int)from toCodepage:(int)to editor:(ScintillaView*)editor
+{
+	if (from == to)
+		return;
 	sptr_t len = [editor message: SCI_GETLENGTH];
-	std::string text(len, '\0');
-	[editor message: SCI_GETTEXT wParam: len + 1 lParam: reinterpret_cast<sptr_t>(text.data())];
+	const char* raw = reinterpret_cast<const char*>([editor message: SCI_GETCHARACTERPOINTER]);
+	NSData* bytes = [NppBuffer encode: [NSData dataWithBytes: raw length: len] codepage: from];
+	NSData* text = [NppBuffer decode: bytes codepage: to];
+	BOOL modified = [editor message: SCI_GETMODIFY] != 0;
+	[editor message: SCI_SETUNDOCOLLECTION wParam: 0];
+	[editor message: SCI_CLEARALL];
+	[editor message: SCI_APPENDTEXT wParam: text.length lParam: reinterpret_cast<sptr_t>(text.bytes)];
+	[editor message: SCI_SETUNDOCOLLECTION wParam: 1];
+	[editor message: SCI_EMPTYUNDOBUFFER];
+	if (!modified)
+		[editor message: SCI_SETSAVEPOINT];
+}
 
-	NSMutableData* out = [NSMutableData data];
-	NSString* str = nil;
-	switch (_encoding)
-	{
-		case NppEncodingUTF8BOM:
-			[out appendBytes: "\xEF\xBB\xBF" length: 3];
-			[[fallthrough]];
-		case NppEncodingUTF8:
-			[out appendBytes: text.data() length: text.size()];
-			break;
-		case NppEncodingUTF16BE:
-		case NppEncodingUTF16LE:
-		{
-			BOOL be = _encoding == NppEncodingUTF16BE;
-			[out appendBytes: be ? "\xFE\xFF" : "\xFF\xFE" length: 2];
-			str = [[NSString alloc] initWithBytes: text.data() length: text.size() encoding: NSUTF8StringEncoding];
-			[out appendData: [str dataUsingEncoding: be ? NSUTF16BigEndianStringEncoding : NSUTF16LittleEndianStringEncoding]];
-			break;
-		}
-		case NppEncodingANSI:
-			str = [[NSString alloc] initWithBytes: text.data() length: text.size() encoding: NSUTF8StringEncoding];
-			[out appendData: [str dataUsingEncoding: NSWindowsCP1252StringEncoding allowLossyConversion: YES]];
-			break;
-	}
+#pragma mark - Disk state
 
-	return [out writeToFile: path options: NSDataWritingAtomic error: error];
+- (NSDate*)diskModificationDate
+{
+	if (!_path)
+		return nil;
+	return [[NSFileManager.defaultManager attributesOfItemAtPath: _path error: nil] fileModificationDate];
+}
+
+- (void)updateTimestamp
+{
+	_lastModified = [self diskModificationDate];
+}
+
+- (BOOL)fileDeleted
+{
+	return _path && ![NSFileManager.defaultManager fileExistsAtPath: _path];
+}
+
+- (BOOL)fileChangedOnDisk
+{
+	NSDate* d = [self diskModificationDate];
+	return d && _lastModified && ![d isEqualToDate: _lastModified];
 }
 
 @end

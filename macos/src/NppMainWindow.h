@@ -23,4 +23,8 @@
 // YES when every dirty buffer was saved or discarded by the user.
 - (BOOL)confirmCloseAll;
 
+- (void)saveSessionToPath:(NSString*)path withBackups:(BOOL)withBackups;
+- (void)loadSessionFromPath:(NSString*)path;
+- (void)captureEditorSettings;
+
 @end

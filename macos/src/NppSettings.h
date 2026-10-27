@@ -7,6 +7,48 @@
 
 struct NppSettings
 {
+	// New documents / loading (NppGUI::_newDocDefaultSettings, _detectEncoding)
+	int _newDocFormat = 2;            // EolType: 0 Windows, 1 Mac (CR), 2 Unix. Notepad++ uses the OS default.
+	int _newDocUnicodeMode = 4;       // UniMode: uniUTF8_NoBOM
+	int _newDocLang = 0;              // LangType: L_TEXT
+	bool _openAnsiAsUtf8 = true;
+	bool _detectEncoding = true;
+
+	// Editing (TabSetting, ScintillaPrimaryView, Caret)
+	int _tabSize = 4;
+	bool _tabReplaceBySpace = false;
+	bool _backspaceUnindent = false;
+	bool _lineNumberShow = true;
+	bool _bookMarkMarginShow = true;
+	bool _indentGuideLineShow = true;
+	std::string _folderMarkStyle = "box";       // simple, arrow, circle, box, none
+	int _isChangeHistoryEnabled = 1;            // 0 off, 1 margin, 2 indicators, 3 both
+	int _currentLineIndicator = 1;              // 0 none, 1 background, 2 frame
+	int _currentLineFrameWidth = 1;
+	bool _wrap = false;
+	std::string _lineWrapMethod = "aligned";    // default, aligned, indent
+	bool _whiteSpaceShow = false;
+	bool _eolShow = false;
+	int _zoom = 0;
+	bool _virtualSpace = false;
+	bool _scrollBeyondLastLine = true;
+	bool _multiSelection = true;
+	bool _lineCopyCutWithoutSelection = true;
+	int _caretWidth = 1;
+	int _caretBlinkRate = 600;
+	bool _statusBarShow = true;
+
+	// Files, session, backup
+	int _fileAutoDetection = 0x02;              // cdEnabled4CurrentFile
+	bool _rememberLastSession = true;
+	int _backupAction = 0;                      // 0 none, 1 simple, 2 verbose
+	bool _useCustomBackupDir = false;
+	std::string _backupDir;
+	bool _isSnapshotMode = true;
+	int _snapshotBackupTiming = 7000;           // ms
+	std::string _dateTimeFormat = "yyyy-MM-dd HH:mm:ss";
+	bool _dateTimeReverseDefaultOrder = false;
+
 	// Searching (NppGUI)
 	bool _enableSmartHilite = true;
 	bool _smartHiliteCaseSensitive = false;

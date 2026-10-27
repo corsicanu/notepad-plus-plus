@@ -3,14 +3,34 @@
 // requests from Finder and the command line.
 
 #import <Cocoa/Cocoa.h>
+#import <objc/runtime.h>
 #import "NppMainWindow.h"
 #import "NppMenuBuilder.h"
 
 #include "LangManager.h"
+#include "NppConfig.h"
+#include "NppSettings.h"
 #include "NppUpstream.h"
 
 @interface AppDelegate : NSObject <NSApplicationDelegate, NSMenuDelegate>
 @end
+
+// Test runs (--snapshot / --quit-after) must never block on a modal alert:
+// print it and take the first button instead.
+@implementation NSAlert (NppTestRun)
+- (NSModalResponse)npp_testRunModal
+{
+	fprintf(stderr, "[alert] %s %s\n", self.messageText.UTF8String, self.informativeText.UTF8String);
+	return NSAlertFirstButtonReturn;
+}
+@end
+
+static void enableNonBlockingAlerts()
+{
+	Method a = class_getInstanceMethod(NSAlert.class, @selector(runModal));
+	Method b = class_getInstanceMethod(NSAlert.class, @selector(npp_testRunModal));
+	method_exchangeImplementations(a, b);
+}
 
 @implementation AppDelegate
 {
@@ -18,6 +38,7 @@
 	NSMutableArray<NSString*>* _pendingOpen;
 	NSMenu* _fileMenu;
 	NSMutableArray<NSMenuItem*>* _recentItems;
+	BOOL _noSession;   // test runs (--snapshot, --dump-menus, -nosession) leave the session alone
 }
 
 static NSMenuItem* item(NSString* title, SEL action, NSString* key, NSEventModifierFlags mods = NSEventModifierFlagCommand)
@@ -123,6 +144,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 
 - (void)applicationWillFinishLaunching:(NSNotification*)notification
 {
+	NppConfig::instance().load();
 	LangManager::instance().load(NSBundle.mainBundle.resourcePath.fileSystemRepresentation);
 	[self buildMenus];
 }
@@ -136,16 +158,22 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	NSMutableArray* paths = [NSMutableArray array];
 	NSMutableArray* commands = [NSMutableArray array];
 	NSArray* args = NSProcessInfo.processInfo.arguments;
+	if ([args containsObject: @"--snapshot"] || [args containsObject: @"--quit-after"])
+		enableNonBlockingAlerts();
 	NSString* snapshot = nil;
 	BOOL dumpMenus = NO;
 	for (NSUInteger i = 1; i < args.count; ++i)
 	{
 		if ([args[i] isEqualToString: @"--snapshot"] && i + 1 < args.count)
 			snapshot = args[++i];
+		else if ([args[i] isEqualToString: @"--quit-after"] && i + 1 < args.count)
+			[NSApp performSelector: @selector(terminate:) withObject: nil afterDelay: [args[++i] doubleValue]];
 		else if ([args[i] isEqualToString: @"--dump-menus"])
 			dumpMenus = YES;
 		else if ([args[i] isEqualToString: @"--cmd"] && i + 1 < args.count)
 			[commands addObject: @([args[++i] intValue])];
+		else if ([args[i] isEqualToString: @"--insert"] && i + 1 < args.count)
+			[commands addObject: @[@"insert", args[++i]]];
 		else if ([args[i] hasPrefix: @"--find-"] && i + 1 < args.count)
 		{
 			// Test hooks for the Find dialog: --find-text/--find-replace/--find-dir/--find-filters/--find-dlg
@@ -159,6 +187,8 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	if (_pendingOpen)
 		[paths addObjectsFromArray: _pendingOpen];
 	_pendingOpen = nil;
+	if (NppSettings::instance()._rememberLastSession && ![args containsObject: @"-nosession"] && !dumpMenus)
+		[_main loadSessionFromPath: [NSString stringWithUTF8String: NppConfig::instance().sessionPath().c_str()]];
 	if (paths.count)
 		[_main openPaths: paths];
 	for (id c in commands)
@@ -168,6 +198,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 		else
 			[_main runFindTestHook: c[0] value: c[1]];
 	}
+	_noSession = snapshot || dumpMenus || [args containsObject: @"-nosession"];
 	if (dumpMenus)
 	{
 		[self dumpMenu: NSApp.mainMenu depth: 0];
@@ -254,9 +285,19 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	return YES;
 }
 
+// Port of Notepad_plus::fileCloseAll / saveSession on exit: in snapshot mode
+// nothing is asked, unsaved changes go to backup files restored next time.
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)sender
 {
-	return [_main confirmCloseAll] ? NSTerminateNow : NSTerminateCancel;
+	const NppSettings& s = NppSettings::instance();
+	BOOL snapshot = s._isSnapshotMode && s._rememberLastSession;
+	if (!snapshot && ![_main confirmCloseAll])
+		return NSTerminateCancel;
+	if (s._rememberLastSession && !_noSession)
+		[_main saveSessionToPath: [NSString stringWithUTF8String: NppConfig::instance().sessionPath().c_str()] withBackups: snapshot];
+	[_main captureEditorSettings];
+	NppConfig::instance().save();
+	return NSTerminateNow;
 }
 
 // Menu commands reach the main window even while a panel (Find, ...) is key.
@@ -278,6 +319,8 @@ int main(int argc, const char* argv[])
 {
 	@autoreleasepool
 	{
+		// argv is parsed by AppDelegate; don't let AppKit also turn it into open-file events.
+		[NSUserDefaults.standardUserDefaults registerDefaults: @{@"NSTreatUnknownArgumentsAsOpen": @"NO"}];
 		NSApplication* app = NSApplication.sharedApplication;
 		AppDelegate* delegate = [[AppDelegate alloc] init];
 		app.delegate = delegate;

@@ -30,7 +30,7 @@ LEX_INC  := -I$(LEX)/include -I$(LEX)/lexlib
 GEN      := $(BUILD)/gen
 APP_INC  := $(SCI_INC) $(LEX_INC) -I$(NPP)/src/pugixml -Isrc -Icompat -I$(GEN) \
             -I$(NPP)/src -I$(NPP)/src/MISC/Common -I$(NPP)/src/MISC/PluginsManager \
-            -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange
+            -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange -I$(NPP)/src/uchardet
 
 # --- Scintilla (core + Cocoa platform layer) -------------------------------
 SCI_SRC  := $(wildcard $(SCI)/src/*.cxx)
@@ -43,6 +43,10 @@ SCI_OBJ  := $(patsubst $(SCI)/%,$(OBJ)/sci/%.o,$(SCI_SRC) $(SCI_MM)) \
 LEX_SRC  := $(wildcard $(LEX)/lexlib/*.cxx) $(wildcard $(LEX)/lexers/*.cxx) $(LEX)/src/Lexilla.cxx
 LEX_OBJ  := $(patsubst $(LEX)/%,$(OBJ)/lex/%.o,$(LEX_SRC))
 
+# --- Portable upstream PowerEditor sources, compiled unchanged ------------
+NPPLIB_SRC := $(wildcard $(NPP)/src/uchardet/*.cpp) $(NPP)/src/EncodingMapper.cpp
+NPPLIB_OBJ := $(patsubst $(NPP)/src/%,$(OBJ)/npp/%.o,$(NPPLIB_SRC))
+
 # --- The app ---------------------------------------------------------------
 APP_SRC  := $(wildcard src/*.mm) $(wildcard src/*.cpp)
 APP_OBJ  := $(patsubst src/%,$(OBJ)/app/%.o,$(APP_SRC))
@@ -50,6 +54,7 @@ APP_HDR  := $(wildcard src/*.h)
 
 LIBSCI   := $(BUILD)/libscintilla.a
 LIBLEX   := $(BUILD)/liblexilla.a
+LIBNPP   := $(BUILD)/libnppcore.a
 EXE      := $(APP)/Contents/MacOS/Notepad++
 RES      := $(APP)/Contents/Resources
 
@@ -86,6 +91,11 @@ $(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Param
 	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
 	@touch $@
 
+$(OBJ)/npp/%.cpp.o: $(NPP)/src/%.cpp
+	@mkdir -p $(dir $@)
+	@echo "  CXX   PowerEditor/src/$*.cpp"
+	@clang++ -std=c++17 $(CXXFLAGS) -w -Icompat -include compat/windows.h -I$(NPP)/src -I$(NPP)/src/uchardet $(SCI_INC) -c $< -o $@
+
 $(OBJ)/app/%.mm.o: src/%.mm $(APP_HDR) $(GEN_INC)
 	@mkdir -p $(dir $@)
 	@echo "  OBJC  macos/src/$*.mm"
@@ -102,10 +112,13 @@ $(LIBSCI): $(SCI_OBJ)
 $(LIBLEX): $(LEX_OBJ)
 	@rm -f $@ && libtool -static -o $@ $^ 2>/dev/null
 
-$(EXE): $(APP_OBJ) $(LIBSCI) $(LIBLEX)
+$(LIBNPP): $(NPPLIB_OBJ)
+	@rm -f $@ && libtool -static -o $@ $^ 2>/dev/null
+
+$(EXE): $(APP_OBJ) $(LIBSCI) $(LIBLEX) $(LIBNPP)
 	@mkdir -p $(dir $@)
 	@echo "  LINK  Notepad++"
-	@clang++ $(ARCHS) $(MINOS) -fobjc-arc $(APP_OBJ) $(LIBSCI) $(LIBLEX) $(FRAMEWORKS) -o $@
+	@clang++ $(ARCHS) $(MINOS) -fobjc-arc $(APP_OBJ) $(LIBSCI) $(LIBLEX) $(LIBNPP) $(FRAMEWORKS) -o $@
 
 # Upstream data files are copied verbatim, so the port picks up upstream
 # language/theme/localization updates on every merge from master.

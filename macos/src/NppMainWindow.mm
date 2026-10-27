@@ -3,9 +3,12 @@
 #import "NppIncrementalFind.h"
 
 #include "LangManager.h"
+#include "NppConfig.h"
 #include "NppSettings.h"
 #include "NppUpstream.h"
+#include "EncodingMapper.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <string>
@@ -15,8 +18,6 @@ namespace
 	const CGFloat kStatusHeight = 22;
 	const CGFloat kFinderHeight = 220;
 
-	NSString* const kRecentFilesKey = @"RecentFiles";
-	const NSUInteger kMaxRecentFiles = 10;
 }
 
 @interface NppMainWindow () <NppTabBarDelegate, ScintillaNotificationProtocol, NSWindowDelegate, NSSplitViewDelegate>
@@ -53,24 +54,28 @@ namespace
 
 #pragma mark - Recent files
 
+// The recent file list lives in config.xml (<History>), like lastRecentFileList.
 + (NSArray<NSString*>*)recentFiles
 {
-	return [NSUserDefaults.standardUserDefaults stringArrayForKey: kRecentFilesKey] ?: @[];
+	NSMutableArray* a = [NSMutableArray array];
+	for (const auto& f : NppConfig::instance().recentFiles)
+		[a addObject: [NSString stringWithUTF8String: f.c_str()]];
+	return a;
 }
 
 + (void)clearRecentFiles
 {
-	[NSUserDefaults.standardUserDefaults removeObjectForKey: kRecentFilesKey];
+	NppConfig::instance().recentFiles.clear();
 }
 
 + (void)addRecentFile:(NSString*)path
 {
-	NSMutableArray* list = [[self recentFiles] mutableCopy];
-	[list removeObject: path];
-	[list insertObject: path atIndex: 0];
-	while (list.count > kMaxRecentFiles)
-		[list removeLastObject];
-	[NSUserDefaults.standardUserDefaults setObject: list forKey: kRecentFilesKey];
+	auto& list = NppConfig::instance().recentFiles;
+	std::string p = path.UTF8String;
+	list.erase(std::remove(list.begin(), list.end(), p), list.end());
+	list.insert(list.begin(), p);
+	while ((int)list.size() > NppConfig::instance().nbMaxRecentFiles)
+		list.pop_back();
 }
 
 #pragma mark - Init
@@ -82,9 +87,7 @@ namespace
 	                                                 backing: NSBackingStoreBuffered
 	                                                   defer: NO];
 	window.minSize = NSMakeSize(400, 250);
-	if (![window setFrameUsingName: @"NotepadPlusPlusMainWindow"])
-		[window center];
-	window.frameAutosaveName = @"NotepadPlusPlusMainWindow";
+	[window center];
 	window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
 
 	if ((self = [super initWithWindow: window]))
@@ -94,7 +97,11 @@ namespace
 		_current = -1;
 		window.delegate = self;
 		[self buildUI];
+		[self restoreWindowFrame];
 		[self newDocument];
+		[self startSnapshotTimer];
+		[NSNotificationCenter.defaultCenter addObserver: self selector: @selector(checkModifiedFiles)
+		                                           name: NSApplicationDidBecomeActiveNotification object: nil];
 	}
 	return self;
 }
@@ -194,6 +201,7 @@ namespace
 	]];
 
 	[self setupEditor: _editor];
+	[self applySettingsToEditor: _editor];
 }
 
 - (void)setupEditor:(ScintillaView*)e
@@ -287,6 +295,42 @@ namespace
 		if (!used)
 			return name;
 	}
+}
+
+- (void)saveCurrentViewState
+{
+	[self saveViewState];
+}
+
+- (NppBuffer*)openSessionFile:(NSString*)file backup:(NSString*)backup encoding:(int)encoding
+{
+	if (!backup)
+	{
+		[self openPaths: @[file]];
+		NSInteger i = [self indexOfPath: file];
+		return i >= 0 ? _buffers[i] : nil;
+	}
+	// Unsaved changes from a snapshot: load the backup, keep the original name.
+	NppBuffer* cur = [self currentBuffer];
+	BOOL reuse = cur && !cur.path && !cur.dirty && [_editor message: SCI_GETLENGTH] == 0 && _buffers.count == 1;
+	NppBuffer* b = reuse ? cur : [self addBuffer];
+	[self saveViewState];
+	_current = [_buffers indexOfObject: b];
+	[_editor message: SCI_SETDOCPOINTER wParam: 0 lParam: reinterpret_cast<sptr_t>(b.document)];
+	if (![b loadFromPath: backup editor: _editor forcedEncoding: encoding error: nil])
+		return nil;
+	BOOL isPath = [file hasPrefix: @"/"];
+	b.path = isPath ? file : nil;
+	if (!isPath)
+		b.untitledName = file;
+	b.lang = LangManager::instance().languageForPath(file.fileSystemRepresentation);
+	if (isPath && [NSFileManager.defaultManager fileExistsAtPath: file])
+		[b updateTimestamp];
+	else
+		b.lastModified = nil;
+	b.backupPath = backup;
+	b.dirty = YES;
+	return b;
 }
 
 - (void)saveViewState
@@ -744,8 +788,42 @@ static NSString* withThousands(long n)
 
 	static NSString* eolNames[] = {@"Windows (CR LF)", @"Macintosh (CR)", @"Unix (LF)"};
 	_statusEOL.stringValue = eolNames[b.eol];
-	_statusEncoding.stringValue = [NppBuffer encodingName: b.encoding];
+	_statusEncoding.stringValue = [self encodingDisplayName: b];
 	_statusMode.stringValue = [e message: SCI_GETOVERTYPE] ? @"OVR" : @"INS";
+}
+
+// Port of Notepad_plus::setUniModeText: codepages show their Encoding-menu label.
+- (NSString*)encodingDisplayName:(NppBuffer*)b
+{
+	if (b.encoding == -1)
+	{
+		switch (b.unicodeMode)
+		{
+			case uniUTF8: return @"UTF-8-BOM";
+			case uni16BE: return @"UTF-16 BE BOM";
+			case uni16LE: return @"UTF-16 LE BOM";
+			case uni16BE_NoBOM: return @"UTF-16 Big Endian";
+			case uni16LE_NoBOM: return @"UTF-16 Little Endian";
+			case uniUTF8_NoBOM: return @"UTF-8";
+			default: return @"ANSI";
+		}
+	}
+	int idx = EncodingMapper::getInstance().getIndexFromEncoding(b.encoding);
+	NSMenuItem* mi = idx < 0 ? nil : [self menuItemWithTag: IDM_FORMAT_ENCODE + idx in: NSApp.mainMenu];
+	return mi ? mi.title : [NSString stringWithFormat: @"CP%d", b.encoding];
+}
+
+- (NSMenuItem*)menuItemWithTag:(NSInteger)tag in:(NSMenu*)menu
+{
+	for (NSMenuItem* mi in menu.itemArray)
+	{
+		if (mi.tag == tag && !mi.submenu)
+			return mi;
+		if (mi.submenu)
+			if (NSMenuItem* found = [self menuItemWithTag: tag in: mi.submenu])
+				return found;
+	}
+	return nil;
 }
 
 #pragma mark - Scintilla notifications
@@ -1128,6 +1206,11 @@ static NSString* withThousands(long n)
 
 - (void)runFindTestHook:(NSString*)key value:(NSString*)value
 {
+	if ([key isEqualToString: @"insert"])
+	{
+		[_editor message: SCI_REPLACESEL wParam: 0 lParam: reinterpret_cast<sptr_t>(value.UTF8String)];
+		return;
+	}
 	NppFindReplaceDlg* d = self.findReplaceDlg;
 	if ([key isEqualToString: @"text"])
 		[d setFindText: value];
