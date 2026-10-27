@@ -87,6 +87,11 @@ static NppEOL detectEOL(const char* p, size_t len)
 
 - (BOOL)loadFromPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error
 {
+	return [self loadFromPath: path editor: editor forcedEncoding: -1 error: error];
+}
+
+- (BOOL)loadFromPath:(NSString*)path editor:(ScintillaView*)editor forcedEncoding:(NSInteger)forced error:(NSError**)error
+{
 	NSData* data = [NSData dataWithContentsOfFile: path options: 0 error: error];
 	if (!data)
 		return NO;
@@ -95,7 +100,33 @@ static NppEOL detectEOL(const char* p, size_t len)
 	NSUInteger len = data.length;
 	NSData* utf8 = nil;
 
-	if (len >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
+	auto skipBOM = [&](NSUInteger n, const char* bom) {
+		return (len >= n && memcmp(bytes, bom, n) == 0) ? [data subdataWithRange: NSMakeRange(n, len - n)] : data;
+	};
+	if (forced >= 0)
+	{
+		_encoding = (NppEncoding)forced;
+		NSString* s = nil;
+		switch (_encoding)
+		{
+			case NppEncodingANSI:
+				s = [[NSString alloc] initWithData: data encoding: NSWindowsCP1252StringEncoding] ?: [[NSString alloc] initWithData: data encoding: NSISOLatin1StringEncoding];
+				break;
+			case NppEncodingUTF8:
+			case NppEncodingUTF8BOM:
+				utf8 = skipBOM(3, "\xEF\xBB\xBF");
+				break;
+			case NppEncodingUTF16BE:
+				s = [[NSString alloc] initWithData: skipBOM(2, "\xFE\xFF") encoding: NSUTF16BigEndianStringEncoding];
+				break;
+			case NppEncodingUTF16LE:
+				s = [[NSString alloc] initWithData: skipBOM(2, "\xFF\xFE") encoding: NSUTF16LittleEndianStringEncoding];
+				break;
+		}
+		if (s)
+			utf8 = [s dataUsingEncoding: NSUTF8StringEncoding];
+	}
+	else if (len >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
 	{
 		_encoding = NppEncodingUTF8BOM;
 		utf8 = [data subdataWithRange: NSMakeRange(3, len - 3)];
@@ -150,6 +181,17 @@ static NppEOL detectEOL(const char* p, size_t len)
 
 - (BOOL)saveToPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error
 {
+	if (![self writeCopyToPath: path editor: editor error: error])
+		return NO;
+	[editor message: SCI_SETSAVEPOINT];
+	_path = [path copy];
+	_dirty = NO;
+	_readOnly = NO;
+	return YES;
+}
+
+- (BOOL)writeCopyToPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error
+{
 	sptr_t len = [editor message: SCI_GETLENGTH];
 	std::string text(len, '\0');
 	[editor message: SCI_GETTEXT wParam: len + 1 lParam: reinterpret_cast<sptr_t>(text.data())];
@@ -179,14 +221,7 @@ static NppEOL detectEOL(const char* p, size_t len)
 			break;
 	}
 
-	if (![out writeToFile: path options: NSDataWritingAtomic error: error])
-		return NO;
-
-	[editor message: SCI_SETSAVEPOINT];
-	_path = [path copy];
-	_dirty = NO;
-	_readOnly = NO;
-	return YES;
+	return [out writeToFile: path options: NSDataWritingAtomic error: error];
 }
 
 @end

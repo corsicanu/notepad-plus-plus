@@ -1,10 +1,10 @@
-#import "NppMainWindow.h"
-#import "NppBuffer.h"
+#import "NppMainWindowInternal.h"
 #import "NppTabBar.h"
-#import "ScintillaView.h"
+#import "NppIncrementalFind.h"
 
-#include "Scintilla.h"
 #include "LangManager.h"
+#include "NppSettings.h"
+#include "NppUpstream.h"
 
 #include <cmath>
 #include <cstring>
@@ -12,28 +12,24 @@
 
 namespace
 {
-	// Margins and markers, as set up in ScintillaEditView::init().
-	enum { MARGIN_LINENUMBER = 0, MARGIN_SYMBOL = 1, MARGIN_FOLD = 2 };
-	const int MARK_BOOKMARK = 20;
-
 	const CGFloat kStatusHeight = 22;
+	const CGFloat kFinderHeight = 220;
 
 	NSString* const kRecentFilesKey = @"RecentFiles";
 	const NSUInteger kMaxRecentFiles = 10;
-
-	NSInteger langIndex(const NppLang* lang)
-	{
-		return lang - LangManager::instance().languages().data();
-	}
 }
 
-@interface NppMainWindow () <NppTabBarDelegate, ScintillaNotificationProtocol, NSWindowDelegate>
+@interface NppMainWindow () <NppTabBarDelegate, ScintillaNotificationProtocol, NSWindowDelegate, NSSplitViewDelegate>
 @end
 
 @implementation NppMainWindow
 {
 	ScintillaView* _editor;
+	ScintillaView* _invisible;     // off-screen view for searching/replacing other documents
 	NppTabBar* _tabBar;
+	NSSplitView* _split;           // editor area | search results
+	NSView* _editorArea;
+	NppFinder* _finder;
 	NSStackView* _statusBar;
 	NSTextField* _statusLang;
 	NSTextField* _statusLength;
@@ -44,8 +40,18 @@ namespace
 
 	NSMutableArray<NppBuffer*>* _buffers;
 	NSInteger _current;
-	BOOL _wordWrap;
+	NppFindReplaceDlg* _findReplaceDlg;
+	NSMutableArray<NSString*>* _closedFiles;   // for "Restore Recent Closed File"
+	NppIncrementalFind* _incFind;
+	NSView* _incBarHolder;
+	NSLayoutConstraint* _incBarHeight;
 }
+
+@synthesize editor = _editor;
+@synthesize buffers = _buffers;
+@synthesize currentIndex = _current;
+
+#pragma mark - Recent files
 
 + (NSArray<NSString*>*)recentFiles
 {
@@ -67,6 +73,8 @@ namespace
 	[NSUserDefaults.standardUserDefaults setObject: list forKey: kRecentFilesKey];
 }
 
+#pragma mark - Init
+
 - (instancetype)init
 {
 	NSWindow* window = [[NSWindow alloc] initWithContentRect: NSMakeRect(0, 0, 1100, 760)
@@ -74,17 +82,19 @@ namespace
 	                                                 backing: NSBackingStoreBuffered
 	                                                   defer: NO];
 	window.minSize = NSMakeSize(400, 250);
-	window.frameAutosaveName = @"NotepadPlusPlusMainWindow";
-	if (!window.frameAutosaveName.length || ![window setFrameUsingName: @"NotepadPlusPlusMainWindow"])
+	if (![window setFrameUsingName: @"NotepadPlusPlusMainWindow"])
 		[window center];
+	window.frameAutosaveName = @"NotepadPlusPlusMainWindow";
+	window.collectionBehavior |= NSWindowCollectionBehaviorFullScreenPrimary;
 
 	if ((self = [super initWithWindow: window]))
 	{
 		_buffers = [NSMutableArray array];
+		_closedFiles = [NSMutableArray array];
 		_current = -1;
 		window.delegate = self;
 		[self buildUI];
-		[self newDocument: nil];
+		[self newDocument];
 	}
 	return self;
 }
@@ -122,6 +132,29 @@ namespace
 	_editor.delegate = self;
 	_editor.translatesAutoresizingMaskIntoConstraints = NO;
 
+	_invisible = [[ScintillaView alloc] initWithFrame: NSMakeRect(0, 0, 200, 200)];
+
+	_editorArea = [[NSView alloc] init];
+	[_editorArea addSubview: _tabBar];
+	[_editorArea addSubview: _editor];
+	[NSLayoutConstraint activateConstraints: @[
+		[_tabBar.topAnchor constraintEqualToAnchor: _editorArea.topAnchor],
+		[_tabBar.leadingAnchor constraintEqualToAnchor: _editorArea.leadingAnchor],
+		[_tabBar.trailingAnchor constraintEqualToAnchor: _editorArea.trailingAnchor],
+		[_tabBar.heightAnchor constraintEqualToConstant: 26],
+		[_editor.topAnchor constraintEqualToAnchor: _tabBar.bottomAnchor],
+		[_editor.leadingAnchor constraintEqualToAnchor: _editorArea.leadingAnchor],
+		[_editor.trailingAnchor constraintEqualToAnchor: _editorArea.trailingAnchor],
+		[_editor.bottomAnchor constraintEqualToAnchor: _editorArea.bottomAnchor],
+	]];
+
+	_split = [[NSSplitView alloc] init];
+	_split.vertical = NO;
+	_split.dividerStyle = NSSplitViewDividerStyleThin;
+	_split.delegate = self;
+	_split.translatesAutoresizingMaskIntoConstraints = NO;
+	[_split addArrangedSubview: _editorArea];
+
 	_statusLang = [self statusField: 160];
 	_statusLength = [self statusField: 170];
 	_statusPos = [self statusField: 220];
@@ -136,32 +169,37 @@ namespace
 	_statusBar.edgeInsets = NSEdgeInsetsMake(0, 8, 0, 8);
 	_statusBar.translatesAutoresizingMaskIntoConstraints = NO;
 
-	[content addSubview: _tabBar];
-	[content addSubview: _editor];
-	[content addSubview: _statusBar];
+	// Incremental search bar sits between the editor and the status bar.
+	_incBarHolder = [[NSView alloc] init];
+	_incBarHolder.translatesAutoresizingMaskIntoConstraints = NO;
+	_incBarHolder.hidden = YES;
+	_incBarHeight = [_incBarHolder.heightAnchor constraintEqualToConstant: 0];
 
+	[content addSubview: _split];
+	[content addSubview: _incBarHolder];
+	[content addSubview: _statusBar];
 	[NSLayoutConstraint activateConstraints: @[
-		[_tabBar.topAnchor constraintEqualToAnchor: content.topAnchor],
-		[_tabBar.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
-		[_tabBar.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
-		[_tabBar.heightAnchor constraintEqualToConstant: 26],
-		[_editor.topAnchor constraintEqualToAnchor: _tabBar.bottomAnchor],
-		[_editor.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
-		[_editor.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
-		[_editor.bottomAnchor constraintEqualToAnchor: _statusBar.topAnchor],
+		[_split.topAnchor constraintEqualToAnchor: content.topAnchor],
+		[_split.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
+		[_split.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
+		[_split.bottomAnchor constraintEqualToAnchor: _incBarHolder.topAnchor],
+		[_incBarHolder.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
+		[_incBarHolder.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
+		[_incBarHolder.bottomAnchor constraintEqualToAnchor: _statusBar.topAnchor],
+		_incBarHeight,
 		[_statusBar.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
 		[_statusBar.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
 		[_statusBar.bottomAnchor constraintEqualToAnchor: content.bottomAnchor],
 		[_statusBar.heightAnchor constraintEqualToConstant: kStatusHeight],
 	]];
 
-	[self setupEditor];
+	[self setupEditor: _editor];
 }
 
-- (void)setupEditor
+- (void)setupEditor:(ScintillaView*)e
 {
-	ScintillaView* e = _editor;
 	[e message: SCI_SETCODEPAGE wParam: SC_CP_UTF8];
+	[e message: SCI_SETIDLESTYLING wParam: SC_IDLESTYLING_ALL];
 	[e message: SCI_SETTABWIDTH wParam: 4];
 	[e message: SCI_SETUSETABS wParam: 1];
 	[e message: SCI_SETMULTIPLESELECTION wParam: 1];
@@ -174,20 +212,26 @@ namespace
 	[e message: SCI_SETCARETLINEVISIBLE wParam: 1];
 	[e message: SCI_SETMODEVENTMASK wParam: SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT];
 
-	// Margins: line numbers | bookmarks | folding.
+	// Margins: line numbers | bookmarks | change history | folding (ScintillaEditView::init).
+	[e message: SCI_SETMARGINS wParam: 4];
 	[e message: SCI_SETMARGINTYPEN wParam: MARGIN_LINENUMBER lParam: SC_MARGIN_NUMBER];
 	[e message: SCI_SETMARGINTYPEN wParam: MARGIN_SYMBOL lParam: SC_MARGIN_SYMBOL];
 	[e message: SCI_SETMARGINWIDTHN wParam: MARGIN_SYMBOL lParam: 16];
-	[e message: SCI_SETMARGINMASKN wParam: MARGIN_SYMBOL lParam: (1 << MARK_BOOKMARK)];
+	[e message: SCI_SETMARGINMASKN wParam: MARGIN_SYMBOL lParam: (1 << MARK_BOOKMARK) | (1 << MARK_HIDELINESBEGIN) | (1 << MARK_HIDELINESEND)];
 	[e message: SCI_SETMARGINSENSITIVEN wParam: MARGIN_SYMBOL lParam: 1];
+	[e message: SCI_SETMARGINTYPEN wParam: MARGIN_CHANGEHISTORY lParam: SC_MARGIN_COLOUR];
+	[e message: SCI_SETMARGINMASKN wParam: MARGIN_CHANGEHISTORY lParam:
+		(1 << SC_MARKNUM_HISTORY_REVERTED_TO_ORIGIN) | (1 << SC_MARKNUM_HISTORY_SAVED) |
+		(1 << SC_MARKNUM_HISTORY_MODIFIED) | (1 << SC_MARKNUM_HISTORY_REVERTED_TO_MODIFIED)];
+	[e message: SCI_SETMARGINWIDTHN wParam: MARGIN_CHANGEHISTORY lParam: 9];
 	[e message: SCI_SETMARGINTYPEN wParam: MARGIN_FOLD lParam: SC_MARGIN_SYMBOL];
 	[e message: SCI_SETMARGINMASKN wParam: MARGIN_FOLD lParam: SC_MASK_FOLDERS];
 	[e message: SCI_SETMARGINWIDTHN wParam: MARGIN_FOLD lParam: 14];
 	[e message: SCI_SETMARGINSENSITIVEN wParam: MARGIN_FOLD lParam: 1];
+	[e message: SCI_SETCHANGEHISTORY wParam: SC_CHANGE_HISTORY_ENABLED | SC_CHANGE_HISTORY_MARKERS];
 
 	[e message: SCI_MARKERDEFINE wParam: MARK_BOOKMARK lParam: SC_MARK_BOOKMARK];
-	[e message: SCI_MARKERSETFORE wParam: MARK_BOOKMARK lParam: 0x000000];
-	[e message: SCI_MARKERSETBACK wParam: MARK_BOOKMARK lParam: 0xFF8000]; // BGR: blue-ish like Notepad++'s bookmark
+	[e message: SCI_MARKERSETALPHA wParam: MARK_BOOKMARK lParam: 70];
 
 	// "Box tree" fold style, Notepad++'s default.
 	[e message: SCI_MARKERDEFINE wParam: SC_MARKNUM_FOLDEROPEN lParam: SC_MARK_BOXMINUS];
@@ -201,7 +245,16 @@ namespace
 	[e message: SCI_SETAUTOMATICFOLD wParam: SC_AUTOMATICFOLD_SHOW | SC_AUTOMATICFOLD_CLICK | SC_AUTOMATICFOLD_CHANGE];
 	[e message: SCI_SETFOLDFLAGS wParam: SC_FOLDFLAG_LINEAFTER_CONTRACTED];
 
-	// Brace highlight uses the lexer-independent styles 34/35 from stylers.xml.
+	// Find/mark/smart-highlight indicators (ScintillaEditView::init).
+	for (int ind : {SCE_UNIVERSAL_FOUND_STYLE_SMART, SCE_UNIVERSAL_FOUND_STYLE, SCE_UNIVERSAL_FOUND_STYLE_INC,
+	                SCE_UNIVERSAL_TAGMATCH, SCE_UNIVERSAL_TAGATTR, SCE_UNIVERSAL_FOUND_STYLE_EXT1, SCE_UNIVERSAL_FOUND_STYLE_EXT2,
+	                SCE_UNIVERSAL_FOUND_STYLE_EXT3, SCE_UNIVERSAL_FOUND_STYLE_EXT4, SCE_UNIVERSAL_FOUND_STYLE_EXT5})
+	{
+		[e message: SCI_INDICSETSTYLE wParam: ind lParam: INDIC_ROUNDBOX];
+		[e message: SCI_INDICSETALPHA wParam: ind lParam: 100];
+		[e message: SCI_INDICSETUNDER wParam: ind lParam: 1];
+	}
+
 	[e message: SCI_SETINDENTATIONGUIDES wParam: SC_IV_LOOKBOTH];
 }
 
@@ -210,6 +263,16 @@ namespace
 - (NppBuffer*)currentBuffer
 {
 	return (_current >= 0 && _current < (NSInteger)_buffers.count) ? _buffers[_current] : nil;
+}
+
+- (NppFindReplaceDlg*)findReplaceDlg
+{
+	if (!_findReplaceDlg)
+	{
+		_findReplaceDlg = [[NppFindReplaceDlg alloc] init];
+		_findReplaceDlg.host = self;
+	}
+	return _findReplaceDlg;
 }
 
 - (NSString*)nextUntitledName
@@ -234,6 +297,13 @@ namespace
 	b.caretPos = [_editor message: SCI_GETCURRENTPOS];
 	b.anchorPos = [_editor message: SCI_GETANCHOR];
 	b.firstVisibleLine = [_editor message: SCI_GETFIRSTVISIBLELINE];
+}
+
+- (void)applyLanguage:(NppBuffer*)b
+{
+	LangManager::instance().apply(_editor, b.lang);
+	[self updateLineNumberMargin];
+	[self updateStatusBar];
 }
 
 - (void)activateBuffer:(NSInteger)index
@@ -270,7 +340,7 @@ namespace
 	return b;
 }
 
-- (void)newDocument:(id)sender
+- (void)newDocument
 {
 	[self addBuffer];
 	[self activateBuffer: _buffers.count - 1];
@@ -281,6 +351,14 @@ namespace
 	NSString* std = path.stringByStandardizingPath;
 	for (NSUInteger i = 0; i < _buffers.count; ++i)
 		if (_buffers[i].path && [_buffers[i].path.stringByStandardizingPath isEqualToString: std])
+			return i;
+	return -1;
+}
+
+- (NSInteger)indexOfUntitled:(NSString*)name
+{
+	for (NSUInteger i = 0; i < _buffers.count; ++i)
+		if (!_buffers[i].path && [_buffers[i].untitledName isEqualToString: name])
 			return i;
 	return -1;
 }
@@ -296,9 +374,35 @@ namespace
 			continue;
 		}
 
+		BOOL isDir = NO;
+		if (![NSFileManager.defaultManager fileExistsAtPath: path isDirectory: &isDir])
+		{
+			// Notepad++ offers to create a missing file.
+			NSAlert* alert = [[NSAlert alloc] init];
+			alert.messageText = [NSString stringWithFormat: @"\"%@\" doesn't exist. Create it?", path];
+			[alert addButtonWithTitle: @"Yes"];
+			[alert addButtonWithTitle: @"No"];
+			if ([alert runModal] != NSAlertFirstButtonReturn || ![[NSData data] writeToFile: path atomically: YES])
+				continue;
+		}
+		else if (isDir)
+		{
+			NSMutableArray* inside = [NSMutableArray array];
+			NSDirectoryEnumerator* en = [NSFileManager.defaultManager enumeratorAtPath: path];
+			for (NSString* rel in en)
+			{
+				NSString* full = [path stringByAppendingPathComponent: rel];
+				BOOL d = NO;
+				if ([NSFileManager.defaultManager fileExistsAtPath: full isDirectory: &d] && !d && ![rel.lastPathComponent hasPrefix: @"."])
+					[inside addObject: full];
+			}
+			[self openPaths: inside];
+			continue;
+		}
+
 		// Like Notepad++, a pristine "new 1" is replaced by the first opened file.
 		NppBuffer* cur = [self currentBuffer];
-		BOOL reuse = cur && !cur.path && !cur.dirty && [_editor message: SCI_GETLENGTH] == 0;
+		BOOL reuse = cur && !cur.path && !cur.dirty && [_editor message: SCI_GETLENGTH] == 0 && _buffers.count == 1;
 
 		NppBuffer* b = reuse ? cur : [self addBuffer];
 		NSInteger idx = [_buffers indexOfObject: b];
@@ -320,8 +424,34 @@ namespace
 		}
 		b.caretPos = b.anchorPos = b.firstVisibleLine = 0;
 		[NppMainWindow addRecentFile: path];
+		[_closedFiles removeObject: path];
 		[self activateBuffer: idx];
 	}
+}
+
+- (void)openDocument
+{
+	NSOpenPanel* panel = [NSOpenPanel openPanel];
+	panel.allowsMultipleSelection = YES;
+	NppBuffer* b = [self currentBuffer];
+	if (b.path)
+		panel.directoryURL = [NSURL fileURLWithPath: b.path.stringByDeletingLastPathComponent];
+	if ([panel runModal] != NSModalResponseOK)
+		return;
+	NSMutableArray* paths = [NSMutableArray array];
+	for (NSURL* url in panel.URLs)
+		[paths addObject: url.path];
+	[self openPaths: paths];
+}
+
+- (NSModalResponse)askSave:(NppBuffer*)b
+{
+	NSAlert* alert = [[NSAlert alloc] init];
+	alert.messageText = [NSString stringWithFormat: @"Save file \"%@\" ?", b.path ?: b.displayName];
+	[alert addButtonWithTitle: @"Yes"];
+	[alert addButtonWithTitle: @"Cancel"];
+	[alert addButtonWithTitle: @"No"];
+	return [alert runModal];
 }
 
 - (void)closeBufferAtIndex:(NSInteger)index force:(BOOL)force
@@ -333,16 +463,17 @@ namespace
 	if (!force && b.dirty)
 	{
 		[self activateBuffer: index];
-		NSAlert* alert = [[NSAlert alloc] init];
-		alert.messageText = [NSString stringWithFormat: @"Save file \"%@\" ?", b.path ?: b.displayName];
-		[alert addButtonWithTitle: @"Yes"];
-		[alert addButtonWithTitle: @"Cancel"];
-		[alert addButtonWithTitle: @"No"];
-		NSModalResponse r = [alert runModal];
+		NSModalResponse r = [self askSave: b];
 		if (r == NSAlertSecondButtonReturn)
 			return;
 		if (r == NSAlertFirstButtonReturn && ![self saveBuffer: b as: NO])
 			return;
+	}
+
+	if (b.path)
+	{
+		[_closedFiles removeObject: b.path];
+		[_closedFiles addObject: b.path];
 	}
 
 	// Last tab closing leaves a fresh "new 1", as Notepad++ does.
@@ -352,8 +483,7 @@ namespace
 		fresh.untitledName = @"new 1";
 	}
 
-	BOOL wasCurrent = index == _current;
-	if (wasCurrent)
+	if (index == _current)
 	{
 		NSInteger next = index < (NSInteger)_buffers.count - 1 ? index + 1 : index - 1;
 		_current = -1;
@@ -394,7 +524,7 @@ namespace
 	if (saveAs || !b.lang || b.lang->name == "normal")
 	{
 		b.lang = LangManager::instance().languageForPath(path.fileSystemRepresentation);
-		LangManager::instance().apply(_editor, b.lang);
+		[self applyLanguage: b];
 	}
 	[NppMainWindow addRecentFile: path];
 	[self refreshTabs];
@@ -403,25 +533,131 @@ namespace
 	return YES;
 }
 
-- (BOOL)confirmCloseAll
+- (BOOL)saveCopyOf:(NppBuffer*)b
 {
-	for (NppBuffer* b in [_buffers copy])
+	NSSavePanel* panel = [NSSavePanel savePanel];
+	panel.nameFieldStringValue = b.displayName;
+	if ([panel runModal] != NSModalResponseOK)
+		return NO;
+	NSError* error = nil;
+	BOOL ok = [b writeCopyToPath: panel.URL.path editor: _editor error: &error];
+	if (!ok)
+		[[NSAlert alertWithError: error] runModal];
+	return ok;
+}
+
+- (BOOL)confirmCloseBuffers:(NSArray<NppBuffer*>*)list
+{
+	for (NppBuffer* b in list)
 	{
 		if (!b.dirty)
 			continue;
 		[self activateBuffer: [_buffers indexOfObject: b]];
-		NSAlert* alert = [[NSAlert alloc] init];
-		alert.messageText = [NSString stringWithFormat: @"Save file \"%@\" ?", b.path ?: b.displayName];
-		[alert addButtonWithTitle: @"Yes"];
-		[alert addButtonWithTitle: @"Cancel"];
-		[alert addButtonWithTitle: @"No"];
-		NSModalResponse r = [alert runModal];
+		NSModalResponse r = [self askSave: b];
 		if (r == NSAlertSecondButtonReturn)
 			return NO;
 		if (r == NSAlertFirstButtonReturn && ![self saveBuffer: b as: NO])
 			return NO;
 	}
 	return YES;
+}
+
+- (BOOL)confirmCloseAll
+{
+	return [self confirmCloseBuffers: [_buffers copy]];
+}
+
+- (void)reloadCurrent
+{
+	NppBuffer* b = [self currentBuffer];
+	if (!b.path)
+		return;
+	if (b.dirty)
+	{
+		NSAlert* alert = [[NSAlert alloc] init];
+		alert.messageText = @"Are you sure you want to reload the current file and lose the changes made in Notepad++?";
+		[alert addButtonWithTitle: @"Yes"];
+		[alert addButtonWithTitle: @"No"];
+		if ([alert runModal] != NSAlertFirstButtonReturn)
+			return;
+	}
+	long line = [_editor message: SCI_GETFIRSTVISIBLELINE];
+	long pos = [_editor message: SCI_GETCURRENTPOS];
+	[_editor message: SCI_SETREADONLY wParam: 0];
+	NSError* error = nil;
+	if (![b loadFromPath: b.path editor: _editor error: &error])
+		[[NSAlert alertWithError: error] runModal];
+	b.caretPos = b.anchorPos = std::min(pos, (long)[_editor message: SCI_GETLENGTH]);
+	b.firstVisibleLine = line;
+	[self activateBuffer: _current];
+}
+
+- (void)renameCurrent
+{
+	NppBuffer* b = [self currentBuffer];
+	NSAlert* alert = [[NSAlert alloc] init];
+	alert.messageText = b.path ? @"Rename Current File" : @"Rename Current Tab";
+	NSTextField* field = [[NSTextField alloc] initWithFrame: NSMakeRect(0, 0, 320, 24)];
+	field.stringValue = b.displayName;
+	alert.accessoryView = field;
+	[alert addButtonWithTitle: @"OK"];
+	[alert addButtonWithTitle: @"Cancel"];
+	alert.window.initialFirstResponder = field;
+	if ([alert runModal] != NSAlertFirstButtonReturn || !field.stringValue.length)
+		return;
+	if (!b.path)
+	{
+		b.untitledName = field.stringValue;
+	}
+	else
+	{
+		NSString* newPath = [b.path.stringByDeletingLastPathComponent stringByAppendingPathComponent: field.stringValue];
+		NSError* error = nil;
+		if (![NSFileManager.defaultManager moveItemAtPath: b.path toPath: newPath error: &error])
+		{
+			[[NSAlert alertWithError: error] runModal];
+			return;
+		}
+		b.path = newPath;
+		b.lang = LangManager::instance().languageForPath(newPath.fileSystemRepresentation);
+		[self applyLanguage: b];
+	}
+	[self refreshTabs];
+	[self updateTitle];
+}
+
+- (void)deleteCurrentFile
+{
+	NppBuffer* b = [self currentBuffer];
+	if (!b.path)
+		return;
+	NSAlert* alert = [[NSAlert alloc] init];
+	alert.messageText = [NSString stringWithFormat: @"Are you sure you want to move \"%@\" to the Trash?", b.path];
+	[alert addButtonWithTitle: @"Yes"];
+	[alert addButtonWithTitle: @"No"];
+	if ([alert runModal] != NSAlertFirstButtonReturn)
+		return;
+	NSError* error = nil;
+	if (![NSFileManager.defaultManager trashItemAtURL: [NSURL fileURLWithPath: b.path] resultingItemURL: nil error: &error])
+	{
+		[[NSAlert alertWithError: error] runModal];
+		return;
+	}
+	[self closeBufferAtIndex: _current force: YES];
+}
+
+- (void)restoreLastClosedFile
+{
+	while (_closedFiles.count)
+	{
+		NSString* p = _closedFiles.lastObject;
+		[_closedFiles removeLastObject];
+		if ([NSFileManager.defaultManager fileExistsAtPath: p])
+		{
+			[self openPaths: @[p]];
+			return;
+		}
+	}
 }
 
 #pragma mark - Display
@@ -531,6 +767,8 @@ static NSString* withThousands(long n)
 		case SCN_UPDATEUI:
 			[self updateStatusBar];
 			[self highlightBraces];
+			if (n->updated & SC_UPDATE_SELECTION)
+				[self smartHighlight];
 			break;
 		case SCN_MODIFIED:
 			if (n->linesAdded)
@@ -568,6 +806,297 @@ static NSString* withThousands(long n)
 		[_editor message: SCI_BRACEHIGHLIGHT wParam: bracePos lParam: match];
 }
 
+// Port of SmartHighlighter::highlightView.
+- (void)smartHighlight
+{
+	ScintillaView* v = _editor;
+	[v message: SCI_SETINDICATORCURRENT wParam: SCE_UNIVERSAL_FOUND_STYLE_SMART];
+	[v message: SCI_INDICATORCLEARRANGE wParam: 0 lParam: [v message: SCI_GETLENGTH]];
+
+	const NppSettings& s = NppSettings::instance();
+	if (!s._enableSmartHilite || [v message: SCI_GETSELECTIONEMPTY])
+		return;
+
+	long curPos = [v message: SCI_GETCURRENTPOS];
+	long selStart = [v message: SCI_GETSELECTIONSTART];
+	long selEnd = [v message: SCI_GETSELECTIONEND];
+	bool isWordOnly = s._smartHiliteUseFindSettings ? s._isMatchWord : s._smartHiliteWordOnly;
+	bool isCaseSensitive = s._smartHiliteUseFindSettings ? s._isMatchCase : s._smartHiliteCaseSensitive;
+
+	if (isWordOnly)
+	{
+		long wordStart = [v message: SCI_WORDSTARTPOSITION wParam: curPos lParam: 1];
+		long wordEnd = [v message: SCI_WORDENDPOSITION wParam: wordStart lParam: 1];
+		if (wordStart == wordEnd || wordStart != selStart || wordEnd != selEnd)
+			return;
+	}
+	else
+	{
+		long line = [v message: SCI_LINEFROMPOSITION wParam: curPos];
+		if (selEnd - selStart > [v message: SCI_LINELENGTH wParam: line])
+			return;
+	}
+
+	std::string word(selEnd - selStart + 1, '\0');
+	Sci_TextRangeFull tr{{selStart, selEnd}, word.data()};
+	[v message: SCI_GETTEXTRANGEFULL wParam: 0 lParam: reinterpret_cast<sptr_t>(&tr)];
+	word.resize(selEnd - selStart);
+	if (word.empty())
+		return;
+
+	long origStart = [v message: SCI_GETTARGETSTART];
+	long origEnd = [v message: SCI_GETTARGETEND];
+
+	FindOption fo;
+	fo._isMatchCase = isCaseSensitive;
+	fo._isWholeWord = isWordOnly;
+	long firstLine = [v message: SCI_GETFIRSTVISIBLELINE];
+	long nbLines = std::min<long>([v message: SCI_LINESONSCREEN], 400) + 1;
+	long prevDocLine = -1;
+	SearchEngine& engine = self.findReplaceDlg.engine;
+	for (long l = firstLine; l < firstLine + nbLines; ++l)
+	{
+		long docLine = [v message: SCI_DOCLINEFROMVISIBLE wParam: l];
+		if (docLine == prevDocLine)
+			continue;
+		prevDocLine = docLine;
+		long start = [v message: SCI_POSITIONFROMLINE wParam: docLine];
+		long end = [v message: SCI_POSITIONFROMLINE wParam: docLine + 1];
+		if (end == -1)
+		{
+			engine.processRange(v, ProcessHighLightAll, word, "", start, [v message: SCI_GETLENGTH], fo);
+			break;
+		}
+		engine.processRange(v, ProcessHighLightAll, word, "", start, end, fo);
+	}
+	[v message: SCI_SETTARGETRANGE wParam: origStart lParam: origEnd];
+}
+
+#pragma mark - Bookmarks / Go to
+
+- (void)toggleBookmarkAtLine:(long)line
+{
+	if ([_editor message: SCI_MARKERGET wParam: line] & (1 << MARK_BOOKMARK))
+		[_editor message: SCI_MARKERDELETE wParam: line lParam: MARK_BOOKMARK];
+	else
+		[_editor message: SCI_MARKERADD wParam: line lParam: MARK_BOOKMARK];
+}
+
+- (void)goToLineDialog
+{
+	NSAlert* alert = [[NSAlert alloc] init];
+	long lines = [_editor message: SCI_GETLINECOUNT];
+	alert.messageText = @"Go To...";
+	alert.informativeText = [NSString stringWithFormat: @"You are here : %ld\nYou want to go to (1 - %ld) :",
+	                         [_editor message: SCI_LINEFROMPOSITION wParam: [_editor message: SCI_GETCURRENTPOS]] + 1, lines];
+	NSTextField* field = [[NSTextField alloc] initWithFrame: NSMakeRect(0, 0, 120, 24)];
+	alert.accessoryView = field;
+	[alert addButtonWithTitle: @"Go"];
+	[alert addButtonWithTitle: @"Cancel"];
+	alert.window.initialFirstResponder = field;
+	if ([alert runModal] != NSAlertFirstButtonReturn)
+		return;
+	long line = field.integerValue;
+	if (line < 1)
+		return;
+	line = std::min(line, lines);
+	[_editor message: SCI_ENSUREVISIBLE wParam: line - 1];
+	[_editor message: SCI_GOTOLINE wParam: line - 1];
+	[_editor message: SCI_SCROLLCARET];
+}
+
+- (NSString*)selectedTextOrWord:(BOOL)expandToWord
+{
+	long s = [_editor message: SCI_GETSELECTIONSTART];
+	long e = [_editor message: SCI_GETSELECTIONEND];
+	if (s == e && expandToWord)
+	{
+		long pos = [_editor message: SCI_GETCURRENTPOS];
+		s = [_editor message: SCI_WORDSTARTPOSITION wParam: pos lParam: 1];
+		e = [_editor message: SCI_WORDENDPOSITION wParam: pos lParam: 1];
+	}
+	if (s == e)
+		return @"";
+	std::string buf(e - s + 1, '\0');
+	Sci_TextRangeFull tr{{s, e}, buf.data()};
+	[_editor message: SCI_GETTEXTRANGEFULL wParam: 0 lParam: reinterpret_cast<sptr_t>(&tr)];
+	buf.resize(e - s);
+	return [NSString stringWithUTF8String: buf.c_str()] ?: @"";
+}
+
+#pragma mark - Incremental search
+
+- (void)showIncrementalFind
+{
+	if (!_incFind)
+	{
+		__weak NppMainWindow* weak = self;
+		_incFind = [[NppIncrementalFind alloc] initWithEngine: &self.findReplaceDlg.engine editor: ^ScintillaView* { return weak.editor; }];
+		_incFind.onClose = ^{ [weak hideIncrementalFind]; };
+		NSView* bar = _incFind.view;
+		bar.frame = NSMakeRect(0, 0, bar.frame.size.width, bar.frame.size.height);
+		[_incBarHolder addSubview: bar];
+	}
+	_incBarHeight.constant = _incFind.view.frame.size.height + 4;
+	_incBarHolder.hidden = NO;
+	[_incFind focus];
+}
+
+- (void)hideIncrementalFind
+{
+	_incBarHeight.constant = 0;
+	_incBarHolder.hidden = YES;
+	[self.window makeFirstResponder: _editor.content];
+}
+
+#pragma mark - Search results panel
+
+- (NppFinder*)showFinder
+{
+	if (!_finder)
+	{
+		_finder = [[NppFinder alloc] initWithFrame: NSMakeRect(0, 0, 400, kFinderHeight)];
+		_finder.delegate = self;
+		_finder.purgeBeforeSearch = NppSettings::instance()._finderPurgeBeforeEverySearch;
+	}
+	if (![self finderVisible])
+	{
+		[_split addArrangedSubview: _finder];
+		[_split layoutSubtreeIfNeeded];
+		[_split setPosition: _split.bounds.size.height - kFinderHeight ofDividerAtIndex: 0];
+	}
+	return _finder;
+}
+
+- (void)hideFinder
+{
+	if ([self finderVisible])
+		[_finder removeFromSuperview];
+	[self.window makeFirstResponder: _editor.content];
+}
+
+- (BOOL)finderVisible
+{
+	return _finder && _finder.superview == _split;
+}
+
+- (BOOL)splitView:(NSSplitView*)splitView canCollapseSubview:(NSView*)subview
+{
+	return NO;
+}
+
+- (CGFloat)splitView:(NSSplitView*)sv constrainMinCoordinate:(CGFloat)p ofSubviewAt:(NSInteger)i
+{
+	return 120;
+}
+
+- (ScintillaView*)finder:(NppFinder*)finder openDocument:(NSString*)path
+{
+	NSInteger idx = [self indexOfPath: path];
+	if (idx < 0)
+		idx = [self indexOfUntitled: path];
+	if (idx < 0)
+	{
+		if (![NSFileManager.defaultManager fileExistsAtPath: path])
+			return nil;
+		[self openPaths: @[path]];
+		idx = [self indexOfPath: path];
+		if (idx < 0)
+			return nil;
+	}
+	if (idx != _current)
+		[self activateBuffer: idx];
+	[self.window makeFirstResponder: _editor.content];
+	return _editor;
+}
+
+- (void)finderDidRequestClose:(NppFinder*)finder
+{
+	[self hideFinder];
+}
+
+#pragma mark - NppFindHost
+
+- (ScintillaView*)currentEditor
+{
+	return _editor;
+}
+
+- (BOOL)currentDocumentIsReadOnly
+{
+	return [self currentBuffer].readOnly;
+}
+
+- (NSString*)currentDocumentPath
+{
+	return [self currentBuffer].path;
+}
+
+- (NSString*)currentDocumentName
+{
+	return [self currentBuffer].displayName;
+}
+
+- (void)attachInvisible:(NppBuffer*)b
+{
+	[_invisible message: SCI_SETDOCPOINTER wParam: 0 lParam: reinterpret_cast<sptr_t>(b.document)];
+	[_invisible message: SCI_SETCODEPAGE wParam: SC_CP_UTF8];
+}
+
+- (void)forEachOpenDocument:(void (^)(ScintillaView*, NSString*, BOOL, BOOL*))block
+{
+	for (NppBuffer* b in [_buffers copy])
+	{
+		[self attachInvisible: b];
+		BOOL modified = NO;
+		block(_invisible, b.path ?: b.displayName, b.readOnly, &modified);
+		if (modified)
+			b.dirty = [_invisible message: SCI_GETMODIFY] != 0;
+	}
+	[_invisible message: SCI_SETDOCPOINTER wParam: 0 lParam: 0];
+	[self refreshTabs];
+	[self updateTitle];
+}
+
+- (BOOL)withFile:(NSString*)path run:(void (^)(ScintillaView*, BOOL*))block
+{
+	NSInteger idx = [self indexOfPath: path];
+	BOOL modified = NO;
+	if (idx >= 0)
+	{
+		NppBuffer* b = _buffers[idx];
+		[self attachInvisible: b];
+		block(_invisible, &modified);
+		if (modified)
+			b.dirty = [_invisible message: SCI_GETMODIFY] != 0;
+		[_invisible message: SCI_SETDOCPOINTER wParam: 0 lParam: 0];
+		return YES;
+	}
+
+	NppBuffer* tmp = [[NppBuffer alloc] initWithEditor: _invisible];
+	[self attachInvisible: tmp];
+	BOOL ok = [tmp loadFromPath: path editor: _invisible error: nil];
+	if (ok)
+	{
+		block(_invisible, &modified);
+		if (modified)
+			ok = [tmp saveToPath: path editor: _invisible error: nil];
+	}
+	[_invisible message: SCI_SETDOCPOINTER wParam: 0 lParam: 0];
+	[tmp releaseDocumentWithEditor: _invisible];
+	return ok;
+}
+
+- (void)documentsModifiedByReplace
+{
+	NppBuffer* b = [self currentBuffer];
+	if (b)
+		b.dirty = [_editor message: SCI_GETMODIFY] != 0;
+	[self refreshTabs];
+	[self updateTitle];
+	[self updateStatusBar];
+}
+
 #pragma mark - Tab bar delegate
 
 - (void)tabBar:(NppTabBar*)tabBar didSelectTabAtIndex:(NSInteger)index
@@ -592,345 +1121,32 @@ static NSString* withThousands(long n)
 
 - (void)tabBarDidRequestNewTab:(NppTabBar*)tabBar
 {
-	[self newDocument: nil];
+	[self newDocument];
+}
+
+#pragma mark - Test hooks
+
+- (void)runFindTestHook:(NSString*)key value:(NSString*)value
+{
+	NppFindReplaceDlg* d = self.findReplaceDlg;
+	if ([key isEqualToString: @"text"])
+		[d setFindText: value];
+	else if ([key isEqualToString: @"replace"])
+		[d setReplaceText: value];
+	else if ([key isEqualToString: @"dir"])
+		[d setDirectory: value filters: nil];
+	else if ([key isEqualToString: @"filters"])
+		[d setDirectory: [d currentOptions]._directory.empty() ? @"" : @([d currentOptions]._directory.c_str()) filters: value];
+	else if ([key isEqualToString: @"dlg"])
+		[d execDialogCommand: value.intValue];
 }
 
 #pragma mark - Window delegate
 
 - (BOOL)windowShouldClose:(NSWindow*)sender
 {
-	if (![self confirmCloseAll])
-		return NO;
 	[NSApp terminate: nil];
 	return NO;
-}
-
-#pragma mark - File menu
-
-- (void)openDocument:(id)sender
-{
-	NSOpenPanel* panel = [NSOpenPanel openPanel];
-	panel.allowsMultipleSelection = YES;
-	NppBuffer* b = [self currentBuffer];
-	if (b.path)
-		panel.directoryURL = [NSURL fileURLWithPath: b.path.stringByDeletingLastPathComponent];
-	if ([panel runModal] != NSModalResponseOK)
-		return;
-	NSMutableArray* paths = [NSMutableArray array];
-	for (NSURL* url in panel.URLs)
-		[paths addObject: url.path];
-	[self openPaths: paths];
-}
-
-- (void)reloadFromDisk:(id)sender
-{
-	NppBuffer* b = [self currentBuffer];
-	if (!b.path)
-		return;
-	if (b.dirty)
-	{
-		NSAlert* alert = [[NSAlert alloc] init];
-		alert.messageText = [NSString stringWithFormat: @"Are you sure you want to reload the current file and lose the changes made in Notepad++?"];
-		[alert addButtonWithTitle: @"Yes"];
-		[alert addButtonWithTitle: @"No"];
-		if ([alert runModal] != NSAlertFirstButtonReturn)
-			return;
-	}
-	long line = [_editor message: SCI_GETFIRSTVISIBLELINE];
-	long pos = [_editor message: SCI_GETCURRENTPOS];
-	[_editor message: SCI_SETREADONLY wParam: 0];
-	NSError* error = nil;
-	if (![b loadFromPath: b.path editor: _editor error: &error])
-		[[NSAlert alertWithError: error] runModal];
-	b.caretPos = b.anchorPos = std::min(pos, (long)[_editor message: SCI_GETLENGTH]);
-	b.firstVisibleLine = line;
-	[self activateBuffer: _current];
-}
-
-- (void)saveDocument:(id)sender
-{
-	[self saveBuffer: [self currentBuffer] as: NO];
-}
-
-- (void)saveDocumentAs:(id)sender
-{
-	[self saveBuffer: [self currentBuffer] as: YES];
-}
-
-- (void)saveAllDocuments:(id)sender
-{
-	NppBuffer* cur = [self currentBuffer];
-	for (NppBuffer* b in [_buffers copy])
-		if (b.dirty && ![self saveBuffer: b as: NO])
-			break;
-	[self activateBuffer: [_buffers indexOfObject: cur]];
-}
-
-- (void)closeDocument:(id)sender
-{
-	[self closeBufferAtIndex: _current force: NO];
-}
-
-- (void)closeAllDocuments:(id)sender
-{
-	if (![self confirmCloseAll])
-		return;
-	while (_buffers.count > 1)
-		[self closeBufferAtIndex: _buffers.count - 1 force: YES];
-	[self closeBufferAtIndex: 0 force: YES];
-}
-
-- (void)closeAllButCurrent:(id)sender
-{
-	NppBuffer* keep = [self currentBuffer];
-	for (NppBuffer* b in [_buffers copy])
-		if (b != keep)
-		{
-			NSUInteger before = _buffers.count;
-			[self closeBufferAtIndex: [_buffers indexOfObject: b] force: NO];
-			if (_buffers.count == before)
-				return; // user cancelled
-		}
-}
-
-#pragma mark - Edit menu
-
-- (void)duplicateLine:(id)sender  { [_editor message: SCI_SELECTIONDUPLICATE]; }
-- (void)deleteLine:(id)sender     { [_editor message: SCI_LINEDELETE]; }
-- (void)moveLineUp:(id)sender     { [_editor message: SCI_MOVESELECTEDLINESUP]; }
-- (void)moveLineDown:(id)sender   { [_editor message: SCI_MOVESELECTEDLINESDOWN]; }
-- (void)toUpperCase:(id)sender    { [_editor message: SCI_UPPERCASE]; }
-- (void)toLowerCase:(id)sender    { [_editor message: SCI_LOWERCASE]; }
-- (void)joinLines:(id)sender
-{
-	[_editor message: SCI_TARGETFROMSELECTION];
-	[_editor message: SCI_LINESJOIN];
-}
-
-- (void)toggleComment:(id)sender
-{
-	NppBuffer* b = [self currentBuffer];
-	if (!b.lang || b.lang->commentLine.empty())
-	{
-		NSBeep();
-		return;
-	}
-	std::string token = b.lang->commentLine + " ";
-	ScintillaView* e = _editor;
-	long startLine = [e message: SCI_LINEFROMPOSITION wParam: [e message: SCI_GETSELECTIONSTART]];
-	long endLine = [e message: SCI_LINEFROMPOSITION wParam: [e message: SCI_GETSELECTIONEND]];
-	if (endLine > startLine && [e message: SCI_GETSELECTIONEND] == [e message: SCI_POSITIONFROMLINE wParam: endLine])
-		--endLine;
-
-	// Uncomment when every non-blank line is commented, otherwise comment.
-	auto lineIndentPos = [e](long l) { return (long)[e message: SCI_GETLINEINDENTPOSITION wParam: l]; };
-	auto lineHasComment = [&](long l) {
-		long p = lineIndentPos(l);
-		for (size_t i = 0; i < b.lang->commentLine.size(); ++i)
-			if ([e message: SCI_GETCHARAT wParam: p + i] != b.lang->commentLine[i])
-				return false;
-		return true;
-	};
-	bool allCommented = true;
-	for (long l = startLine; l <= endLine; ++l)
-		if (lineIndentPos(l) != [e message: SCI_GETLINEENDPOSITION wParam: l] && !lineHasComment(l))
-			allCommented = false;
-
-	[e message: SCI_BEGINUNDOACTION];
-	for (long l = startLine; l <= endLine; ++l)
-	{
-		long p = lineIndentPos(l);
-		if (p == [e message: SCI_GETLINEENDPOSITION wParam: l])
-			continue;
-		if (allCommented)
-		{
-			long len = b.lang->commentLine.size();
-			if ([e message: SCI_GETCHARAT wParam: p + len] == ' ')
-				++len;
-			[e message: SCI_DELETERANGE wParam: p lParam: len];
-		}
-		else
-		{
-			[e message: SCI_INSERTTEXT wParam: p lParam: reinterpret_cast<sptr_t>(token.c_str())];
-		}
-	}
-	[e message: SCI_ENDUNDOACTION];
-}
-
-#pragma mark - Search menu
-
-- (void)goToLine:(id)sender
-{
-	NSAlert* alert = [[NSAlert alloc] init];
-	long lines = [_editor message: SCI_GETLINECOUNT];
-	alert.messageText = @"Go To...";
-	alert.informativeText = [NSString stringWithFormat: @"You are here : %ld\nYou want to go to (1 - %ld) :",
-	                         [_editor message: SCI_LINEFROMPOSITION wParam: [_editor message: SCI_GETCURRENTPOS]] + 1, lines];
-	NSTextField* field = [[NSTextField alloc] initWithFrame: NSMakeRect(0, 0, 120, 24)];
-	alert.accessoryView = field;
-	[alert addButtonWithTitle: @"Go"];
-	[alert addButtonWithTitle: @"Cancel"];
-	alert.window.initialFirstResponder = field;
-	if ([alert runModal] != NSAlertFirstButtonReturn)
-		return;
-	long line = field.integerValue;
-	if (line < 1)
-		return;
-	line = std::min(line, lines);
-	[_editor message: SCI_ENSUREVISIBLE wParam: line - 1];
-	[_editor message: SCI_GOTOLINE wParam: line - 1];
-	[_editor message: SCI_SCROLLCARET];
-}
-
-- (void)toggleBookmarkAtLine:(long)line
-{
-	if ([_editor message: SCI_MARKERGET wParam: line] & (1 << MARK_BOOKMARK))
-		[_editor message: SCI_MARKERDELETE wParam: line lParam: MARK_BOOKMARK];
-	else
-		[_editor message: SCI_MARKERADD wParam: line lParam: MARK_BOOKMARK];
-}
-
-- (void)toggleBookmark:(id)sender
-{
-	[self toggleBookmarkAtLine: [_editor message: SCI_LINEFROMPOSITION wParam: [_editor message: SCI_GETCURRENTPOS]]];
-}
-
-- (void)jumpToBookmark:(BOOL)forward
-{
-	long line = [_editor message: SCI_LINEFROMPOSITION wParam: [_editor message: SCI_GETCURRENTPOS]];
-	long found = forward ? [_editor message: SCI_MARKERNEXT wParam: line + 1 lParam: 1 << MARK_BOOKMARK]
-	                     : [_editor message: SCI_MARKERPREVIOUS wParam: line - 1 lParam: 1 << MARK_BOOKMARK];
-	if (found < 0) // wrap around
-		found = forward ? [_editor message: SCI_MARKERNEXT wParam: 0 lParam: 1 << MARK_BOOKMARK]
-		                : [_editor message: SCI_MARKERPREVIOUS wParam: [_editor message: SCI_GETLINECOUNT] lParam: 1 << MARK_BOOKMARK];
-	if (found >= 0)
-	{
-		[_editor message: SCI_ENSUREVISIBLE wParam: found];
-		[_editor message: SCI_GOTOLINE wParam: found];
-	}
-}
-
-- (void)nextBookmark:(id)sender     { [self jumpToBookmark: YES]; }
-- (void)previousBookmark:(id)sender { [self jumpToBookmark: NO]; }
-- (void)clearBookmarks:(id)sender   { [_editor message: SCI_MARKERDELETEALL wParam: MARK_BOOKMARK]; }
-
-#pragma mark - View menu
-
-- (void)toggleWordWrap:(id)sender
-{
-	_wordWrap = !_wordWrap;
-	[_editor message: SCI_SETWRAPMODE wParam: _wordWrap ? SC_WRAP_WORD : SC_WRAP_NONE];
-}
-
-- (void)toggleShowWhitespace:(id)sender
-{
-	BOOL on = [_editor message: SCI_GETVIEWWS] != SCWS_INVISIBLE;
-	[_editor message: SCI_SETVIEWWS wParam: on ? SCWS_INVISIBLE : SCWS_VISIBLEALWAYS];
-}
-
-- (void)toggleShowEOL:(id)sender
-{
-	[_editor message: SCI_SETVIEWEOL wParam: ![_editor message: SCI_GETVIEWEOL]];
-}
-
-- (void)toggleShowAllChars:(id)sender
-{
-	BOOL on = [_editor message: SCI_GETVIEWEOL] && [_editor message: SCI_GETVIEWWS] != SCWS_INVISIBLE;
-	[_editor message: SCI_SETVIEWEOL wParam: !on];
-	[_editor message: SCI_SETVIEWWS wParam: on ? SCWS_INVISIBLE : SCWS_VISIBLEALWAYS];
-}
-
-- (void)toggleIndentGuides:(id)sender
-{
-	BOOL on = [_editor message: SCI_GETINDENTATIONGUIDES] != SC_IV_NONE;
-	[_editor message: SCI_SETINDENTATIONGUIDES wParam: on ? SC_IV_NONE : SC_IV_LOOKBOTH];
-}
-
-- (void)zoomIn:(id)sender      { [_editor message: SCI_ZOOMIN]; }
-- (void)zoomOut:(id)sender     { [_editor message: SCI_ZOOMOUT]; }
-- (void)zoomRestore:(id)sender { [_editor message: SCI_SETZOOM wParam: 0]; }
-
-- (void)foldAll:(id)sender   { [_editor message: SCI_FOLDALL wParam: SC_FOLDACTION_CONTRACT]; }
-- (void)unfoldAll:(id)sender { [_editor message: SCI_FOLDALL wParam: SC_FOLDACTION_EXPAND]; }
-
-- (void)nextTab:(id)sender
-{
-	if (_buffers.count > 1)
-		[self activateBuffer: (_current + 1) % _buffers.count];
-}
-
-- (void)previousTab:(id)sender
-{
-	if (_buffers.count > 1)
-		[self activateBuffer: (_current + _buffers.count - 1) % _buffers.count];
-}
-
-#pragma mark - Encoding / EOL / Language menus
-
-- (void)setEncodingFromMenu:(NSMenuItem*)sender
-{
-	NppBuffer* b = [self currentBuffer];
-	if (b.encoding == (NppEncoding)sender.tag)
-		return;
-	b.encoding = (NppEncoding)sender.tag;
-	// Changing the encoding is an edit in Notepad++: the file must be saved to apply it.
-	if (!b.dirty)
-	{
-		b.dirty = YES;
-		[self refreshTabs];
-		[self updateTitle];
-	}
-	[self updateStatusBar];
-}
-
-- (void)setEOLFromMenu:(NSMenuItem*)sender
-{
-	NppBuffer* b = [self currentBuffer];
-	b.eol = (NppEOL)sender.tag;
-	[_editor message: SCI_CONVERTEOLS wParam: b.eol];
-	[_editor message: SCI_SETEOLMODE wParam: b.eol];
-	[self updateStatusBar];
-}
-
-- (void)setLanguageFromMenu:(NSMenuItem*)sender
-{
-	NppBuffer* b = [self currentBuffer];
-	const auto& langs = LangManager::instance().languages();
-	if (sender.tag < 0 || sender.tag >= (NSInteger)langs.size())
-		return;
-	b.lang = &langs[sender.tag];
-	LangManager::instance().apply(_editor, b.lang);
-	[self updateLineNumberMargin];
-	[self updateStatusBar];
-}
-
-#pragma mark - Menu validation
-
-- (BOOL)validateMenuItem:(NSMenuItem*)item
-{
-	NppBuffer* b = [self currentBuffer];
-	SEL a = item.action;
-	if (a == @selector(setLanguageFromMenu:))
-		item.state = (b.lang && langIndex(b.lang) == item.tag) ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(setEncodingFromMenu:))
-		item.state = b.encoding == item.tag ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(setEOLFromMenu:))
-		item.state = b.eol == item.tag ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(toggleWordWrap:))
-		item.state = _wordWrap ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(toggleShowWhitespace:))
-		item.state = [_editor message: SCI_GETVIEWWS] != SCWS_INVISIBLE ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(toggleShowEOL:))
-		item.state = [_editor message: SCI_GETVIEWEOL] ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(toggleShowAllChars:))
-		item.state = ([_editor message: SCI_GETVIEWEOL] && [_editor message: SCI_GETVIEWWS] != SCWS_INVISIBLE) ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(toggleIndentGuides:))
-		item.state = [_editor message: SCI_GETINDENTATIONGUIDES] != SC_IV_NONE ? NSControlStateValueOn : NSControlStateValueOff;
-	else if (a == @selector(reloadFromDisk:))
-		return b.path != nil;
-	else if (a == @selector(saveDocument:))
-		return b.dirty || !b.path;
-	return YES;
 }
 
 @end

@@ -45,7 +45,11 @@ typedef NS_ENUM(NSInteger, NppEOL) {
 // Reads the file into this buffer's document. The document must be
 // attached to `editor` while loading.
 - (BOOL)loadFromPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error;
+// As above, but decodes the bytes as `encoding` instead of detecting it (-1 = detect).
+- (BOOL)loadFromPath:(NSString*)path editor:(ScintillaView*)editor forcedEncoding:(NSInteger)encoding error:(NSError**)error;
 - (BOOL)saveToPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error;
+// Writes the text with this buffer's encoding without changing path or save point.
+- (BOOL)writeCopyToPath:(NSString*)path editor:(ScintillaView*)editor error:(NSError**)error;
 
 // Drops the Scintilla document; call when the tab is closed.
 - (void)releaseDocumentWithEditor:(ScintillaView*)editor;

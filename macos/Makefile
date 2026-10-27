@@ -24,14 +24,20 @@ CXXFLAGS := $(OPT) $(ARCHS) $(MINOS) -DNDEBUG -Wno-deprecated-declarations
 OBJCFLAGS := -fobjc-arc
 
 SCI_INC  := -I$(SCI)/include -I$(SCI)/src -I$(SCI)/cocoa
+# Notepad++ replaces Scintilla's regex engine with boost::regex (boostregex/nppSpecifics.mak).
+SCI_DEFS := -DSCI_OWNREGEX -DBOOST_REGEX_STANDALONE -I$(ROOT)/boostregex
 LEX_INC  := -I$(LEX)/include -I$(LEX)/lexlib
-APP_INC  := $(SCI_INC) $(LEX_INC) -I$(NPP)/src/pugixml -Isrc
+GEN      := $(BUILD)/gen
+APP_INC  := $(SCI_INC) $(LEX_INC) -I$(NPP)/src/pugixml -Isrc -Icompat -I$(GEN) \
+            -I$(NPP)/src -I$(NPP)/src/MISC/Common -I$(NPP)/src/MISC/PluginsManager \
+            -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange
 
 # --- Scintilla (core + Cocoa platform layer) -------------------------------
 SCI_SRC  := $(wildcard $(SCI)/src/*.cxx)
 SCI_MM   := $(SCI)/cocoa/PlatCocoa.mm $(SCI)/cocoa/ScintillaCocoa.mm \
             $(SCI)/cocoa/ScintillaView.mm $(SCI)/cocoa/InfoBar.mm
-SCI_OBJ  := $(patsubst $(SCI)/%,$(OBJ)/sci/%.o,$(SCI_SRC) $(SCI_MM))
+SCI_OBJ  := $(patsubst $(SCI)/%,$(OBJ)/sci/%.o,$(SCI_SRC) $(SCI_MM)) \
+            $(OBJ)/boostregex/BoostRegExSearch.cxx.o $(OBJ)/boostregex/UTF8DocumentIterator.cxx.o
 
 # --- Lexilla (all lexers, including Notepad++'s user/searchResult) --------
 LEX_SRC  := $(wildcard $(LEX)/lexlib/*.cxx) $(wildcard $(LEX)/lexers/*.cxx) $(LEX)/src/Lexilla.cxx
@@ -55,24 +61,37 @@ all: $(EXE) resources sign
 $(OBJ)/sci/%.cxx.o: $(SCI)/%.cxx
 	@mkdir -p $(dir $@)
 	@echo "  CXX   scintilla/$*.cxx"
-	@clang++ -std=c++17 $(CXXFLAGS) $(SCI_INC) -c $< -o $@
+	@clang++ -std=c++17 $(CXXFLAGS) $(SCI_INC) $(SCI_DEFS) -c $< -o $@
+
+$(OBJ)/boostregex/%.cxx.o: $(ROOT)/boostregex/%.cxx
+	@mkdir -p $(dir $@)
+	@echo "  CXX   boostregex/$*.cxx"
+	@clang++ -std=c++17 $(CXXFLAGS) $(SCI_INC) $(SCI_DEFS) -w -c $< -o $@
 
 $(OBJ)/sci/%.mm.o: $(SCI)/%.mm
 	@mkdir -p $(dir $@)
 	@echo "  OBJC  scintilla/$*.mm"
-	@clang++ -std=c++17 $(CXXFLAGS) $(OBJCFLAGS) $(SCI_INC) -c $< -o $@
+	@clang++ -std=c++17 $(CXXFLAGS) $(OBJCFLAGS) $(SCI_INC) $(SCI_DEFS) -c $< -o $@
 
 $(OBJ)/lex/%.cxx.o: $(LEX)/%.cxx
 	@mkdir -p $(dir $@)
 	@echo "  CXX   lexilla/$*.cxx"
 	@clang++ -std=c++17 $(CXXFLAGS) -Icompat $(SCI_INC) $(LEX_INC) -c $< -o $@
 
-$(OBJ)/app/%.mm.o: src/%.mm $(APP_HDR)
+# Tables lifted from upstream sources (see tools/gen_upstream.sh).
+GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc
+$(GEN_INC): $(GEN)/.stamp
+$(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp
+	@echo "  GEN   upstream tables"
+	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
+	@touch $@
+
+$(OBJ)/app/%.mm.o: src/%.mm $(APP_HDR) $(GEN_INC)
 	@mkdir -p $(dir $@)
 	@echo "  OBJC  macos/src/$*.mm"
 	@clang++ $(CXXSTD) $(CXXFLAGS) $(OBJCFLAGS) -Wall $(APP_INC) -c $< -o $@
 
-$(OBJ)/app/%.cpp.o: src/%.cpp $(APP_HDR)
+$(OBJ)/app/%.cpp.o: src/%.cpp $(APP_HDR) $(GEN_INC)
 	@mkdir -p $(dir $@)
 	@echo "  CXX   macos/src/$*.cpp"
 	@clang++ $(CXXSTD) $(CXXFLAGS) -Wall $(APP_INC) -c $< -o $@
@@ -96,6 +115,9 @@ resources: $(EXE)
 	@cp Info.plist $(APP)/Contents/Info.plist
 	@cp $(NPP)/src/langs.model.xml $(RES)/langs.model.xml
 	@cp $(NPP)/src/stylers.model.xml $(RES)/stylers.model.xml
+	@cp $(NPP)/src/Notepad_plus.rc $(RES)/Notepad_plus.rc
+	@mkdir -p $(RES)/rc
+	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
 	@cp $(NPP)/installer/themes/*.xml $(RES)/themes/ 2>/dev/null || true
 	@cp $(NPP)/installer/nativeLang/*.xml $(RES)/localization/ 2>/dev/null || true
 	@for n in info_bar_bg mac_cursor_busy mac_cursor_flipped; do \

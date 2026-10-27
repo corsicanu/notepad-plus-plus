@@ -1,5 +1,7 @@
 // The Notepad++ main window: tab bar, one Scintilla editor that swaps
-// documents per tab (as PowerEditor's ScintillaEditView does), status bar.
+// documents per tab (as PowerEditor's ScintillaEditView does), dockable
+// panels and the status bar. Menu commands arrive as Notepad++ command
+// IDs through -nppCommand: (see NppCommands.mm).
 #pragma once
 
 #import <Cocoa/Cocoa.h>
@@ -9,8 +11,14 @@
 + (NSArray<NSString*>*)recentFiles;
 + (void)clearRecentFiles;
 
-- (void)newDocument:(id)sender;
 - (void)openPaths:(NSArray<NSString*>*)paths;
+
+// Runs a Notepad++ command (IDM_*); returns NO if the command isn't ported yet.
+- (BOOL)runCommand:(int)cmd;
+- (void)nppCommand:(id)sender;
+
+// Command-line test hooks driving the Find dialog (see AppDelegate).
+- (void)runFindTestHook:(NSString*)key value:(NSString*)value;
 
 // YES when every dirty buffer was saved or discarded by the user.
 - (BOOL)confirmCloseAll;

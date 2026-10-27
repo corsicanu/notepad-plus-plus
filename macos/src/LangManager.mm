@@ -210,6 +210,23 @@ const NppLang* LangManager::languageForPath(const std::string& path) const
 	return languageByName("normal");
 }
 
+const NppLang* LangManager::languageByType(int langType) const
+{
+	if (langType < 0 || langType >= (int)std::size(langInfos))
+		return nullptr;
+	return languageByName(langInfos[langType].name);
+}
+
+int LangManager::langTypeOf(const NppLang* lang) const
+{
+	if (!lang)
+		return 0;
+	for (size_t i = 0; i < std::size(langInfos); ++i)
+		if (lang->name == langInfos[i].name)
+			return (int)i;
+	return 0;
+}
+
 const NppStyle* LangManager::globalStyle(const std::string& name) const
 {
 	for (const auto& s : _globalStyles)
@@ -272,6 +289,11 @@ void LangManager::applyGlobalStyles(ScintillaView* view) const
 		[view message: SCI_SETELEMENTCOLOUR wParam: SC_ELEMENT_WHITE_SPACE lParam: bgr(c) | 0xFF000000];
 	if ((c = color("Bookmark margin", false)) >= 0)
 		[view message: SCI_SETMARGINBACKN wParam: 1 lParam: bgr(c)];
+
+	// Indicator colours (find marks, smart highlighting, mark styles 1-5, tag match).
+	for (const auto& s : _globalStyles)
+		if (s.styleID >= SCE_UNIVERSAL_FOUND_STYLE_EXT5 && s.styleID <= SCE_UNIVERSAL_FOUND_STYLE && s.bgColor >= 0)
+			[view message: SCI_INDICSETFORE wParam: s.styleID lParam: bgr(s.bgColor)];
 
 	const NppStyle* foldMargin = globalStyle("Fold margin");
 	if (foldMargin)

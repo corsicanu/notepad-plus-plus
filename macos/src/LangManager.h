@@ -9,12 +9,9 @@
 
 #import "ScintillaView.h"
 
-// Keyword classes, same order as LANG_INDEX_* in PowerEditor/src/MISC/Common/NppConstants.h
-enum { LANG_INDEX_INSTR = 0, LANG_INDEX_INSTR2, LANG_INDEX_TYPE, LANG_INDEX_TYPE2, LANG_INDEX_TYPE3,
-       LANG_INDEX_TYPE4, LANG_INDEX_TYPE5, LANG_INDEX_TYPE6, LANG_INDEX_TYPE7,
-       LANG_INDEX_SUBSTYLE1, NB_KEYWORD_LIST = LANG_INDEX_SUBSTYLE1 + 8 };
+#include "NppUpstream.h"   // LANG_INDEX_*, FONTSTYLE_*
 
-enum { FONTSTYLE_BOLD = 1, FONTSTYLE_ITALIC = 2, FONTSTYLE_UNDERLINE = 4 };
+enum { NB_KEYWORD_LIST = LANG_INDEX_SUBSTYLE1 + 8 };
 
 struct NppStyle
 {
@@ -49,6 +46,10 @@ public:
 	const NppLang* languageByName(const std::string& name) const;
 	const NppLang* languageForPath(const std::string& path) const;
 	const NppStyle* globalStyle(const std::string& name) const;
+
+	// LangType (Notepad_plus_msgs.h) <-> language entry.
+	const NppLang* languageByType(int langType) const;
+	int langTypeOf(const NppLang* lang) const;
 
 	// Sets lexer, keyword lists, styles and folding properties.
 	void apply(ScintillaView* view, const NppLang* lang) const;
