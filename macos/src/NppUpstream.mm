@@ -16,6 +16,16 @@ namespace
 #include "ScintKeyDefs.inc"
 	};
 
+	const ToolbarIconDef kToolbarIcons[]
+	{
+#include "ToolbarIcons.inc"
+	};
+
+	const MenuItemUnitDef kTabContextMenu[]
+	{
+#include "TabContextMenu.inc"
+	};
+
 	struct NamedId { const char* name; int id; };
 	const NamedId kMenuIds[]
 	{
@@ -37,6 +47,18 @@ namespace NppUpstream
 	{
 		count = std::size(kScintKeyDefs);
 		return kScintKeyDefs;
+	}
+
+	const ToolbarIconDef* toolbarIcons(size_t& count)
+	{
+		count = std::size(kToolbarIcons);
+		return kToolbarIcons;
+	}
+
+	const MenuItemUnitDef* defaultTabContextMenu(size_t& count)
+	{
+		count = std::size(kTabContextMenu);
+		return kTabContextMenu;
 	}
 
 	int menuIdByName(const char* name)

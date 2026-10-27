@@ -8,7 +8,6 @@
 
 namespace
 {
-	const bool dirUp = true;
 	const bool dirDown = false;
 
 	sptr_t sci(ScintillaView* v, unsigned int m, uptr_t w = 0, sptr_t l = 0)

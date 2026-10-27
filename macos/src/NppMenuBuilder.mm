@@ -28,13 +28,7 @@ namespace
 	// A few labels name Windows-only places; give the macOS equivalent.
 	NSString* macLabel(int cmd, NSString* label)
 	{
-		switch (cmd)
-		{
-			case IDM_FILE_OPEN_FOLDER: return @"Finder";
-			case IDM_FILE_OPEN_CMD: return @"Terminal";
-			case IDM_FILE_DELETE: return @"Move to Trash";
-			default: return label;
-		}
+		return [NppMenuBuilder macTitle: label command: cmd];
 	}
 
 	struct Lexer
@@ -231,6 +225,36 @@ namespace
 }
 
 @implementation NppMenuBuilder
+
++ (NSString*)macTitle:(NSString*)title command:(int)cmd
+{
+	auto swap = [&](NSString* from, NSString* to) {
+		title = [title stringByReplacingOccurrencesOfString: from withString: to];
+	};
+	switch (cmd)
+	{
+		case IDM_FILE_OPEN_FOLDER:
+			if ([title isEqualToString: @"Explorer"])
+				return @"Finder";
+			swap(@"Explorer", @"Finder");
+			break;
+		case IDM_FILE_OPEN_CMD:
+			if ([title isEqualToString: @"cmd"])
+				return @"Terminal";
+			swap(@" cmd", @" Terminal");
+			break;
+		case IDM_FILE_DELETE:
+			swap(@"Recycle Bin", @"Trash");
+			break;
+		case IDM_EDIT_TOGGLESYSTEMREADONLY:
+			swap(@"Windows", @"macOS");
+			break;
+		case IDM_EDIT_OPENSELECTEDFILEFOLDERINEXPLORER:
+			swap(@"Explorer", @"Finder");
+			break;
+	}
+	return title;
+}
 
 + (NSString*)stripMnemonic:(NSString*)label
 {

@@ -84,9 +84,10 @@ $(OBJ)/lex/%.cxx.o: $(LEX)/%.cxx
 	@clang++ -std=c++17 $(CXXFLAGS) -Icompat $(SCI_INC) $(LEX_INC) -c $< -o $@
 
 # Tables lifted from upstream sources (see tools/gen_upstream.sh).
-GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc
+GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc \
+            $(GEN)/ToolbarIcons.inc $(GEN)/TabContextMenu.inc
 $(GEN_INC): $(GEN)/.stamp
-$(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp
+$(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp $(NPP)/src/NppNotification.cpp
 	@echo "  GEN   upstream tables"
 	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
 	@touch $@
@@ -129,6 +130,7 @@ resources: $(EXE)
 	@cp $(NPP)/src/langs.model.xml $(RES)/langs.model.xml
 	@cp $(NPP)/src/stylers.model.xml $(RES)/stylers.model.xml
 	@cp $(NPP)/src/Notepad_plus.rc $(RES)/Notepad_plus.rc
+	@rsync -a --delete $(NPP)/src/icons/ $(RES)/icons/
 	@mkdir -p $(RES)/rc
 	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
 	@cp $(NPP)/installer/themes/*.xml $(RES)/themes/ 2>/dev/null || true

@@ -17,6 +17,9 @@
 // Applies Notepad++'s default shortcuts (Parameters.cpp winKeyDefs/scintKeyDefs).
 + (void)applyDefaultShortcuts:(NSMenu*)menu;
 
+// Windows wording -> macOS wording for a few commands ("Explorer" -> "Finder").
++ (NSString*)macTitle:(NSString*)title command:(int)cmd;
+
 // "&Open..." -> "Open...", "&&" -> "&".
 + (NSString*)stripMnemonic:(NSString*)label;
 

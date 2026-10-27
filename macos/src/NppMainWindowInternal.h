@@ -55,6 +55,9 @@ enum
 - (NSString*)selectedTextOrWord:(BOOL)expandToWord;
 
 - (void)saveCurrentViewState;
+- (void)togglePinCurrent;
+- (void)setCurrentTabColor:(int)color;
+- (void)moveCurrentTabTo:(NSInteger)to;
 - (NppBuffer*)openSessionFile:(NSString*)file backup:(NSString*)backup encoding:(int)encoding;
 
 @end

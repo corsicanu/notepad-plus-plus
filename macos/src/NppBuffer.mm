@@ -180,6 +180,7 @@ namespace
 		_eol = (NppEOL)s._newDocFormat;
 		_lang = LangManager::instance().languageByType(s._newDocLang) ?: LangManager::instance().languageByName("normal");
 		_untitledName = @"new 1";
+		_tabColor = -1;
 	}
 	return self;
 }

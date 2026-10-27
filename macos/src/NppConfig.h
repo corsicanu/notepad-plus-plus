@@ -20,6 +20,8 @@ struct SessionFileInfo
 	long endPos = 0;
 	bool userReadOnly = false;
 	bool untitleTabRenamed = false;
+	int tabColour = -1;
+	bool tabPinned = false;
 	long long originalFileLastModifTimestamp = 0;
 	std::vector<long> marks;
 	std::vector<long> folds;

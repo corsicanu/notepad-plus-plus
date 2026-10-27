@@ -15,7 +15,7 @@
 
 typedef void (^NppCommandHandler)(NppMainWindow* w);
 
-@interface NppMainWindow (Commands)
+@interface NppMainWindow (CommandsInternal)
 + (const std::unordered_map<int, NppCommandHandler>&)commandTable;
 - (void)toggleLineComment;
 - (void)convertEOL:(NppEOL)eol;
@@ -324,6 +324,7 @@ namespace
 	t[IDM_FILE_CLOSEALL_BUT_CURRENT] = ^(NppMainWindow* w) { closeWhere(w, ^BOOL(NppBuffer*, NSInteger rel) { return rel == 0; }); };
 	t[IDM_FILE_CLOSEALL_TOLEFT] = ^(NppMainWindow* w) { closeWhere(w, ^BOOL(NppBuffer*, NSInteger rel) { return rel >= 0; }); };
 	t[IDM_FILE_CLOSEALL_TORIGHT] = ^(NppMainWindow* w) { closeWhere(w, ^BOOL(NppBuffer*, NSInteger rel) { return rel <= 0; }); };
+	t[IDM_FILE_CLOSEALL_BUT_PINNED] = ^(NppMainWindow* w) { closeWhere(w, ^BOOL(NppBuffer* b, NSInteger) { return b.pinned; }); };
 	t[IDM_FILE_CLOSEALL_UNCHANGED] = ^(NppMainWindow* w) { closeWhere(w, ^BOOL(NppBuffer* b, NSInteger) { return b.dirty || !b.path; }); };
 	t[IDM_FILE_DELETE] = ^(NppMainWindow* w) { [w deleteCurrentFile]; };
 	t[IDM_FILE_LOADSESSION] = ^(NppMainWindow* w) {
@@ -343,6 +344,30 @@ namespace
 	t[IDM_CLEAN_RECENT_FILE_LIST] = ^(NppMainWindow* w) { [NppMainWindow clearRecentFiles]; };
 
 	// ---- Edit ----
+	// Main-menu items use the responder chain; context menus and the toolbar come here.
+	t[IDM_EDIT_UNDO] = ^(NppMainWindow* w) { sci(w.editor, SCI_UNDO); };
+	t[IDM_EDIT_REDO] = ^(NppMainWindow* w) { sci(w.editor, SCI_REDO); };
+	t[IDM_EDIT_CUT] = ^(NppMainWindow* w) { sci(w.editor, SCI_CUT); };
+	t[IDM_EDIT_COPY] = ^(NppMainWindow* w) { sci(w.editor, SCI_COPY); };
+	t[IDM_EDIT_PASTE] = ^(NppMainWindow* w) { sci(w.editor, SCI_PASTE); };
+	t[IDM_EDIT_DELETE] = ^(NppMainWindow* w) { sci(w.editor, SCI_CLEAR); };
+	t[IDM_EDIT_SELECTALL] = ^(NppMainWindow* w) { sci(w.editor, SCI_SELECTALL); };
+	t[IDM_EDIT_TOGGLESYSTEMREADONLY] = ^(NppMainWindow* w) {
+		// macOS counterpart of the Windows read-only attribute: the user write permission bit.
+		NppBuffer* b = w.currentBuffer;
+		if (!b.path)
+			return;
+		NSDictionary* attrs = [NSFileManager.defaultManager attributesOfItemAtPath: b.path error: nil];
+		short perm = [attrs[NSFilePosixPermissions] shortValue];
+		BOOL ro = (perm & 0200) != 0;
+		perm = ro ? (perm & ~0222) : (perm | 0200);
+		if ([NSFileManager.defaultManager setAttributes: @{NSFilePosixPermissions: @(perm)} ofItemAtPath: b.path error: nil])
+		{
+			b.fileReadOnly = ro;
+			sci(w.editor, SCI_SETREADONLY, b.readOnly || b.fileReadOnly);
+			[w refreshTabs];
+		}
+	};
 	t[IDM_EDIT_INS_TAB] = ^(NppMainWindow* w) { sci(w.editor, SCI_TAB); };
 	t[IDM_EDIT_RMV_TAB] = ^(NppMainWindow* w) { sci(w.editor, SCI_BACKTAB); };
 	t[IDM_EDIT_DUP_LINE] = ^(NppMainWindow* w) { sci(w.editor, SCI_LINEDUPLICATE); };
@@ -588,6 +613,11 @@ namespace
 			if (n < (int)w.buffers.count)
 				[w activateBuffer: n];
 		};
+	t[IDM_PINTAB] = ^(NppMainWindow* w) { [w togglePinCurrent]; };
+	for (int c = IDM_VIEW_TAB_COLOUR_NONE; c <= IDM_VIEW_TAB_COLOUR_5; ++c)
+		t[c] = ^(NppMainWindow* w) { [w setCurrentTabColor: c - IDM_VIEW_TAB_COLOUR_NONE - 1]; };
+	t[IDM_VIEW_GOTO_START] = ^(NppMainWindow* w) { [w moveCurrentTabTo: 0]; };
+	t[IDM_VIEW_GOTO_END] = ^(NppMainWindow* w) { [w moveCurrentTabTo: w.buffers.count]; };
 	t[IDM_VIEW_TAB_MOVEFORWARD] = ^(NppMainWindow* w) { [w moveCurrentTab: 1]; };
 	t[IDM_VIEW_TAB_MOVEBACKWARD] = ^(NppMainWindow* w) { [w moveCurrentTab: -1]; };
 	t[IDM_VIEW_FULLSCREENTOGGLE] = ^(NppMainWindow* w) { [w.window toggleFullScreen: nil]; };
@@ -960,6 +990,8 @@ static int textCodepage(NppBuffer* b)
 		case IDM_VIEW_ALWAYSONTOP: check(self.window.level == NSFloatingWindowLevel); break;
 		case IDM_VIEW_FULLSCREENTOGGLE: check((self.window.styleMask & NSWindowStyleMaskFullScreen) != 0); break;
 		case IDM_EDIT_TOGGLEREADONLY: check(b.readOnly); break;
+		case IDM_EDIT_TOGGLESYSTEMREADONLY: check(b.fileReadOnly); return b.path != nil;
+		case IDM_PINTAB: item.title = b.pinned ? @"Unpin Tab" : @"Pin Tab"; break;
 		case IDM_FORMAT_ANSI: check(b.encoding == -1 && (b.unicodeMode == uni8Bit || b.unicodeMode == uni7Bit)); break;
 		case IDM_FORMAT_AS_UTF_8: check(b.encoding == -1 && b.unicodeMode == uniUTF8_NoBOM); break;
 		case IDM_FORMAT_UTF_8: check(b.encoding == -1 && b.unicodeMode == uniUTF8); break;

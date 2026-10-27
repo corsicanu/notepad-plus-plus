@@ -13,8 +13,8 @@ Upstream is reused in four ways:
 |---|---|---|
 | Compiled unchanged | Scintilla (+ Notepad++'s boost::regex engine), Lexilla (+ `LexUser`, `LexSearchResult`), pugixml, uchardet, `EncodingMapper.cpp` | `Makefile` |
 | Headers included | `Notepad_plus_msgs.h`, `menuCmdID.h`, `NppConstants.h`, `resource.h`, `*_rc.h` | `src/NppUpstream.h` |
-| Extracted at build time | default shortcuts (`winKeyDefs`, `scintKeyDefs`), `menuID2LangType()`, menu command IDs | `tools/gen_upstream.sh` |
-| Read at runtime | `Notepad_plus.rc` (main menu), all dialog `.rc` files, `langs.model.xml`, `stylers.model.xml`, themes, localization | `src/NppMenuBuilder.mm`, `src/NppRcDialog.mm`, `src/LangManager.mm` |
+| Extracted at build time | default shortcuts (`winKeyDefs`, `scintKeyDefs`), `menuID2LangType()`, menu command IDs, toolbar buttons (`toolBarIcons[]`), default tab context menu | `tools/gen_upstream.sh` |
+| Read at runtime | `Notepad_plus.rc` (main menu, toolbar icon files), all dialog `.rc` files, `src/icons/`, `langs.model.xml`, `stylers.model.xml`, themes, localization | `src/NppMenuBuilder.mm`, `src/NppRcDialog.mm`, `src/NppToolbar.mm`, `src/LangManager.mm` |
 
 `compat/windows.h` is a small Win32 type/constant shim that lets those upstream
 headers (and `LexUser.cxx`) compile on macOS.
@@ -94,7 +94,7 @@ Current Document, `1636` Find All in Opened Documents, `1609` Replace All,
 - [x] **Phase 1** — window, tabs, status bar, file I/O (ANSI/UTF-8/UTF-8-BOM/UTF-16), all languages and default styles, folding, bookmarks
 - [x] **Phase 2** — menus generated from upstream, command-ID dispatch, Find / Replace / Find in Files / Mark (Normal, Extended, boost::regex), Search results panel, Incremental search, Find characters in range, Mark styles 1–5, bookmarked-line ops, change history, smart highlighting, generic `.rc` dialog loader
 - [x] **Phase 3** — `config.xml` / `session.xml` in upstream format, session restore, snapshot backups, Load/Save Session, files changed/deleted outside the editor, all Encoding-menu codepages, uchardet detection (upstream's load order)
-- [ ] **Phase 4** — toolbar, tab bar options and context menus, editor context menu
+- [x] **Phase 4** — toolbar from upstream `toolBarIcons[]` + icon files (Fluent light/dark, filled, standard), tab context menu (upstream default or `tabContextMenu.xml`), editor context menu (`contextMenu.xml`, created from upstream's default), pinned tabs, tab colours, tab bar options from `config.xml`
 - [ ] **Phase 5** — themes, Style Configurator, dark mode
 - [ ] **Phase 6** — Preferences dialog, localization (`nativeLang`)
 - [ ] **Phase 7** — split view (move/clone), remaining Edit operations, Column editor, multi-select

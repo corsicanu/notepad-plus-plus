@@ -37,6 +37,19 @@ struct NppSettings
 	int _caretWidth = 1;
 	int _caretBlinkRate = 600;
 	bool _statusBarShow = true;
+	bool _toolbarShow = true;
+	int _toolbarIconSet = 0;                    // NppToolbarIconSet
+
+	// TabBar
+	bool _tabDragAndDrop = true;
+	bool _tabDrawTopBar = true;
+	bool _tabDrawInactive = true;
+	bool _tabReduce = true;
+	bool _tabCloseButton = true;
+	bool _tabDoubleClickClose = false;
+	bool _tabPinButton = true;
+	bool _tabBarHide = false;
+	bool _tabQuitOnEmpty = false;
 
 	// Files, session, backup
 	int _fileAutoDetection = 0x02;              // cdEnabled4CurrentFile

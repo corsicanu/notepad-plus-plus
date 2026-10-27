@@ -29,6 +29,17 @@ mv "$OUT/ScintKeyDefs.inc.tmp" "$OUT/ScintKeyDefs.inc"
 awk '/^LangType Notepad_plus::menuID2LangType\(int cmdID\)/{m=1} m{print} m&&/^}/{exit}' "$SRC/Notepad_plus.cpp" > "$OUT/MenuID2LangType.inc.tmp"
 mv "$OUT/MenuID2LangType.inc.tmp" "$OUT/MenuID2LangType.inc"
 
-for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType; do
+# 5. Toolbar buttons (Notepad_plus.cpp: toolBarIcons[]): command ID + icon resource names, quoted.
+awk '/static constexpr ToolBarButtonUnit toolBarIcons\[\]/{m=1; next} m&&/^};/{exit} m&&/^[[:space:]]*\{/' "$SRC/Notepad_plus.cpp" \
+	| sed -E 's/(ID[IR]_[A-Z0-9_]+)/"\1"/g' > "$OUT/ToolbarIcons.inc.tmp"
+mv "$OUT/ToolbarIcons.inc.tmp" "$OUT/ToolbarIcons.inc"
+
+# 6. Default tab context menu (NppNotification.cpp).
+awk '/else \/\/ default tab context menu/{m=1} m&&/_tabPopupMenu\.create/{exit} m' "$SRC/NppNotification.cpp" \
+	| grep -E 'itemUnitArray\.push_back\(MenuItemUnit\(' \
+	| sed -E 's/.*MenuItemUnit\((.*)\)\);.*/\t{\1},/' > "$OUT/TabContextMenu.inc.tmp"
+mv "$OUT/TabContextMenu.inc.tmp" "$OUT/TabContextMenu.inc"
+
+for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu; do
 	[ -s "$OUT/$f.inc" ] || { echo "gen_upstream: $f.inc is empty, upstream layout changed" >&2; exit 1; }
 done

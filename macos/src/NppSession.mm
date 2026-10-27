@@ -176,6 +176,8 @@
 		fi.endPos = b.caretPos;
 		fi.userReadOnly = b.readOnly;
 		fi.untitleTabRenamed = !b.path && ![b.untitledName hasPrefix: @"new "];
+		fi.tabColour = b.tabColor;
+		fi.tabPinned = b.pinned;
 		fi.originalFileLastModifTimestamp = (long long)(b.lastModified.timeIntervalSince1970 * 10000000.0) + 116444736000000000LL;
 		ScintillaView* v = self.editor;
 		BOOL attached = b == [self currentBuffer];
@@ -232,6 +234,8 @@
 		if (const NppLang* lang = [self languageNamed: fi.langName])
 			b.lang = lang;
 		b.readOnly = fi.userReadOnly;
+		b.tabColor = fi.tabColour;
+		b.pinned = fi.tabPinned;
 		b.firstVisibleLine = fi.firstVisibleLine;
 		b.anchorPos = fi.startPos;
 		b.caretPos = fi.endPos;

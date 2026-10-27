@@ -15,14 +15,16 @@ namespace
 	NSColor* activeStripe() { return [NSColor colorWithSRGBRed: 0xFA / 255.0 green: 0xAA / 255.0 blue: 0x3C / 255.0 alpha: 1]; }
 }
 
+@implementation NppTabInfo
+@end
+
 @implementation NppTabBar
 {
-	NSArray<NSString*>* _titles;
-	NSArray<NSNumber*>* _states;
-	NSArray<NSString*>* _tooltips;
+	NSArray<NppTabInfo*>* _tabs;
 	std::vector<NSRect> _rects;
 	NSInteger _hoverClose;
 	NSInteger _dragIndex;
+	CGFloat _scroll;
 	NSTrackingArea* _tracking;
 }
 
@@ -32,7 +34,10 @@ namespace
 	{
 		_hoverClose = -1;
 		_dragIndex = -1;
-		_titles = @[];
+		_tabs = @[];
+		_showCloseButton = YES;
+		_drawTopBar = YES;
+		_showPinButton = YES;
 	}
 	return self;
 }
@@ -53,11 +58,9 @@ namespace
 	return @{NSFontAttributeName: font, NSForegroundColorAttributeName: active ? NSColor.labelColor : NSColor.secondaryLabelColor};
 }
 
-- (void)setTabs:(NSArray<NSString*>*)titles states:(NSArray<NSNumber*>*)states tooltips:(NSArray<NSString*>*)tooltips
+- (void)setTabs:(NSArray<NppTabInfo*>*)tabs
 {
-	_titles = [titles copy];
-	_states = [states copy];
-	_tooltips = [tooltips copy];
+	_tabs = [tabs copy];
 	[self layoutTabs];
 	[self setNeedsDisplay: YES];
 }
@@ -66,28 +69,61 @@ namespace
 {
 	_selectedIndex = selectedIndex;
 	[self layoutTabs];
+	[self scrollToSelected];
 	[self setNeedsDisplay: YES];
+}
+
+- (BOOL)hasButton:(NSInteger)i
+{
+	return _showCloseButton || (_showPinButton && _tabs[i].pinned);
 }
 
 - (void)layoutTabs
 {
 	_rects.clear();
 	[self removeAllToolTips];
-	CGFloat x = 0;
-	for (NSUInteger i = 0; i < _titles.count; ++i)
+	CGFloat x = -_scroll;
+	for (NSUInteger i = 0; i < _tabs.count; ++i)
 	{
-		NSSize ts = [_titles[i] sizeWithAttributes: [self titleAttributes: YES]];
-		CGFloat w = kPad + kIconSize + kPad + ts.width + kPad + kCloseSize + kPad;
+		NSSize ts = [_tabs[i].title sizeWithAttributes: [self titleAttributes: YES]];
+		CGFloat w = kPad + kIconSize + kPad + ts.width + kPad + ([self hasButton: i] ? kCloseSize + kPad : 0);
 		w = std::min(std::max(w, kTabMinWidth), kTabMaxWidth);
 		NSRect r = NSMakeRect(x, 0, w, kTabHeight);
 		_rects.push_back(r);
-		if (i < _tooltips.count)
-			[self addToolTipRect: r owner: _tooltips[i] userData: nil];
+		if (_tabs[i].tooltip)
+			[self addToolTipRect: r owner: _tabs[i].tooltip userData: nil];
 		x += w;
 	}
 }
 
-- (NSRect)closeRectForTab:(NSInteger)i
+- (CGFloat)contentWidth
+{
+	return _rects.empty() ? 0 : NSMaxX(_rects.back()) + _scroll;
+}
+
+- (void)scrollToSelected
+{
+	if (_selectedIndex < 0 || _selectedIndex >= (NSInteger)_rects.size())
+		return;
+	NSRect r = _rects[_selectedIndex];
+	CGFloat w = self.bounds.size.width;
+	if (r.origin.x < 0)
+		_scroll += r.origin.x;
+	else if (NSMaxX(r) > w)
+		_scroll += NSMaxX(r) - w;
+	_scroll = std::max<CGFloat>(0, std::min(_scroll, std::max<CGFloat>(0, [self contentWidth] - w)));
+	[self layoutTabs];
+}
+
+- (void)scrollWheel:(NSEvent*)event
+{
+	CGFloat delta = fabs(event.scrollingDeltaX) > fabs(event.scrollingDeltaY) ? event.scrollingDeltaX : event.scrollingDeltaY;
+	_scroll = std::max<CGFloat>(0, std::min(_scroll - delta, std::max<CGFloat>(0, [self contentWidth] - self.bounds.size.width)));
+	[self layoutTabs];
+	[self setNeedsDisplay: YES];
+}
+
+- (NSRect)buttonRectForTab:(NSInteger)i
 {
 	NSRect r = _rects[i];
 	return NSMakeRect(NSMaxX(r) - kPad - kCloseSize, (kTabHeight - kCloseSize) / 2 + 1, kCloseSize, kCloseSize);
@@ -106,6 +142,18 @@ namespace
 	NSRectFill(NSMakeRect(r.origin.x + 3.5, NSMaxY(r) - 4, r.size.width - 7, 2.5));
 }
 
+- (void)drawPin:(NSRect)r color:(NSColor*)c
+{
+	[c setStroke];
+	NSBezierPath* p = [NSBezierPath bezierPath];
+	p.lineWidth = 1.3;
+	CGFloat cx = NSMidX(r);
+	[p appendBezierPathWithOvalInRect: NSMakeRect(cx - 3, r.origin.y + 1, 6, 6)];
+	[p moveToPoint: NSMakePoint(cx, r.origin.y + 7)];
+	[p lineToPoint: NSMakePoint(cx, NSMaxY(r))];
+	[p stroke];
+}
+
 - (void)drawRect:(NSRect)dirtyRect
 {
 	BOOL dark = [self.effectiveAppearance bestMatchFromAppearancesWithNames: @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] == NSAppearanceNameDarkAqua;
@@ -120,36 +168,48 @@ namespace
 	for (NSUInteger i = 0; i < _rects.size(); ++i)
 	{
 		NSRect r = _rects[i];
+		NppTabInfo* tab = _tabs[i];
 		BOOL active = (NSInteger)i == _selectedIndex;
-		[(active ? activeBg : inactiveBg) setFill];
+		[(tab.color ?: (active ? activeBg : inactiveBg)) setFill];
 		NSRectFill(NSInsetRect(r, 0.5, 0));
 		[border setFill];
 		NSRectFill(NSMakeRect(NSMaxX(r) - 1, r.origin.y + 3, 1, r.size.height - 3));
-		if (active)
+		if (active && _drawTopBar)
 		{
 			[activeStripe() setFill];
 			NSRectFill(NSMakeRect(r.origin.x, 0, r.size.width - 1, 3));
 		}
 
-		NppTabState state = i < _states.count ? (NppTabState)_states[i].integerValue : NppTabSaved;
-		[self drawStateIcon: state inRect: NSMakeRect(r.origin.x + kPad, (kTabHeight - kIconSize) / 2 + 1, kIconSize, kIconSize)];
+		[self drawStateIcon: tab.state inRect: NSMakeRect(r.origin.x + kPad, (kTabHeight - kIconSize) / 2 + 1, kIconSize, kIconSize)];
 
 		NSDictionary* attrs = [self titleAttributes: active];
-		NSRect tr = NSMakeRect(r.origin.x + kPad + kIconSize + kPad, 0, r.size.width - (3 * kPad + kIconSize + kCloseSize + kPad), kTabHeight);
-		NSSize ts = [_titles[i] sizeWithAttributes: attrs];
+		CGFloat buttonSpace = [self hasButton: i] ? kCloseSize + kPad : 0;
+		NSRect tr = NSMakeRect(r.origin.x + kPad + kIconSize + kPad, 0, r.size.width - (3 * kPad + kIconSize + buttonSpace), kTabHeight);
+		NSSize ts = [tab.title sizeWithAttributes: attrs];
 		tr.origin.y = (kTabHeight - ts.height) / 2 + 1;
 		tr.size.height = ts.height;
 		NSMutableParagraphStyle* ps = [[NSMutableParagraphStyle alloc] init];
 		ps.lineBreakMode = NSLineBreakByTruncatingTail;
 		NSMutableDictionary* a = [attrs mutableCopy];
 		a[NSParagraphStyleAttributeName] = ps;
-		[_titles[i] drawInRect: tr withAttributes: a];
+		if (tab.color)
+			a[NSForegroundColorAttributeName] = NSColor.blackColor;
+		[tab.title drawInRect: tr withAttributes: a];
 
-		NSRect cr = [self closeRectForTab: i];
-		if ((NSInteger)i == _hoverClose)
+		if (![self hasButton: i])
+			continue;
+		NSRect cr = [self buttonRectForTab: i];
+		BOOL hover = (NSInteger)i == _hoverClose;
+		if (hover)
 		{
 			[[NSColor colorWithSRGBRed: 0.85 green: 0.2 blue: 0.2 alpha: 1] setFill];
 			[[NSBezierPath bezierPathWithRoundedRect: cr xRadius: 2 yRadius: 2] fill];
+		}
+		NSColor* glyph = hover ? NSColor.whiteColor : NSColor.secondaryLabelColor;
+		if (_showPinButton && tab.pinned)
+		{
+			[self drawPin: NSInsetRect(cr, 2, 1) color: glyph];
+			continue;
 		}
 		NSBezierPath* x = [NSBezierPath bezierPath];
 		NSRect xr = NSInsetRect(cr, 3, 3);
@@ -158,7 +218,7 @@ namespace
 		[x moveToPoint: NSMakePoint(NSMaxX(xr), xr.origin.y)];
 		[x lineToPoint: NSMakePoint(xr.origin.x, NSMaxY(xr))];
 		x.lineWidth = 1.3;
-		[((NSInteger)i == _hoverClose ? NSColor.whiteColor : NSColor.secondaryLabelColor) setStroke];
+		[glyph setStroke];
 		[x stroke];
 	}
 
@@ -185,11 +245,17 @@ namespace
 	[self addTrackingArea: _tracking];
 }
 
+- (void)setFrameSize:(NSSize)newSize
+{
+	[super setFrameSize: newSize];
+	[self scrollToSelected];
+}
+
 - (void)mouseMoved:(NSEvent*)event
 {
 	NSPoint p = [self convertPoint: event.locationInWindow fromView: nil];
 	NSInteger i = [self tabAtPoint: p];
-	NSInteger hover = (i >= 0 && NSPointInRect(p, [self closeRectForTab: i])) ? i : -1;
+	NSInteger hover = (i >= 0 && [self hasButton: i] && NSPointInRect(p, [self buttonRectForTab: i])) ? i : -1;
 	if (hover != _hoverClose)
 	{
 		_hoverClose = hover;
@@ -213,14 +279,22 @@ namespace
 			[_delegate tabBarDidRequestNewTab: self];
 		return;
 	}
-	if (NSPointInRect(p, [self closeRectForTab: i]))
+	if ([self hasButton: i] && NSPointInRect(p, [self buttonRectForTab: i]))
+	{
+		if (_showPinButton && _tabs[i].pinned)
+			[_delegate tabBar: self didRequestPinTabAtIndex: i];
+		else
+			[_delegate tabBar: self didRequestCloseTabAtIndex: i];
+		return;
+	}
+	if (event.clickCount == 2 && _doubleClickCloses)
 	{
 		[_delegate tabBar: self didRequestCloseTabAtIndex: i];
 		return;
 	}
 	if (i != _selectedIndex)
 		[_delegate tabBar: self didSelectTabAtIndex: i];
-	_dragIndex = i;
+	_dragIndex = _lockDrag ? -1 : i;
 }
 
 - (void)mouseDragged:(NSEvent*)event
@@ -229,7 +303,8 @@ namespace
 		return;
 	NSPoint p = [self convertPoint: event.locationInWindow fromView: nil];
 	NSInteger target = [self tabAtPoint: NSMakePoint(p.x, kTabHeight / 2)];
-	if (target >= 0 && target != _dragIndex)
+	// Pinned tabs stay before unpinned ones.
+	if (target >= 0 && target != _dragIndex && _tabs[target].pinned == _tabs[_dragIndex].pinned)
 	{
 		[_delegate tabBar: self didMoveTabFromIndex: _dragIndex toIndex: target];
 		_dragIndex = target;
@@ -239,6 +314,16 @@ namespace
 - (void)mouseUp:(NSEvent*)event
 {
 	_dragIndex = -1;
+}
+
+- (NSMenu*)menuForEvent:(NSEvent*)event
+{
+	NSInteger i = [self tabAtPoint: [self convertPoint: event.locationInWindow fromView: nil]];
+	if (i < 0)
+		return nil;
+	if (i != _selectedIndex)
+		[_delegate tabBar: self didSelectTabAtIndex: i];
+	return [_delegate tabBar: self menuForTabAtIndex: i];
 }
 
 - (void)otherMouseUp:(NSEvent*)event

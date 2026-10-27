@@ -5,6 +5,7 @@
 #include "NppUpstream.h"
 #include "NppXml.h"
 
+#include <algorithm>
 #include <cstring>
 
 namespace
@@ -288,6 +289,24 @@ void NppConfig::load()
 	}
 	if (pugi::xml_node n = gui("StatusBar", false))
 		s._statusBarShow = text(n) != "hide";
+	if (pugi::xml_node n = gui("ToolBar", false))
+	{
+		s._toolbarShow = getBool(n, "visible", s._toolbarShow);
+		std::string t = text(n);
+		s._toolbarIconSet = t == "large" ? 1 : t == "small2" ? 2 : t == "large2" ? 3 : t == "standard" ? 4 : 0;
+	}
+	if (pugi::xml_node n = gui("TabBar", false))
+	{
+		s._tabDragAndDrop = getBool(n, "dragAndDrop", s._tabDragAndDrop);
+		s._tabDrawTopBar = getBool(n, "drawTopBar", s._tabDrawTopBar);
+		s._tabDrawInactive = getBool(n, "drawInactiveTab", s._tabDrawInactive);
+		s._tabReduce = getBool(n, "reduce", s._tabReduce);
+		s._tabCloseButton = getBool(n, "closeButton", s._tabCloseButton);
+		s._tabDoubleClickClose = getBool(n, "doubleClick2Close", s._tabDoubleClickClose);
+		s._tabPinButton = getBool(n, "pinButton", s._tabPinButton);
+		s._tabBarHide = getBool(n, "hide", s._tabBarHide);
+		s._tabQuitOnEmpty = getBool(n, "quitOnEmpty", s._tabQuitOnEmpty);
+	}
 }
 
 void NppConfig::save()
@@ -408,6 +427,22 @@ void NppConfig::save()
 
 	setText(gui("StatusBar", true), s._statusBarShow ? "show" : "hide");
 
+	n = gui("ToolBar", true);
+	setBool(n, "visible", s._toolbarShow);
+	static const char* sets[] = {"small", "large", "small2", "large2", "standard"};
+	setText(n, sets[std::max(0, std::min(4, s._toolbarIconSet))]);
+
+	n = gui("TabBar", true);
+	setBool(n, "dragAndDrop", s._tabDragAndDrop);
+	setBool(n, "drawTopBar", s._tabDrawTopBar);
+	setBool(n, "drawInactiveTab", s._tabDrawInactive);
+	setBool(n, "reduce", s._tabReduce);
+	setBool(n, "closeButton", s._tabCloseButton);
+	setBool(n, "doubleClick2Close", s._tabDoubleClickClose);
+	setBool(n, "pinButton", s._tabPinButton);
+	setBool(n, "hide", s._tabBarHide);
+	setBool(n, "quitOnEmpty", s._tabQuitOnEmpty);
+
 	if (g_doc.first_child().type() != pugi::node_declaration)
 	{
 		pugi::xml_node decl = g_doc.prepend_child(pugi::node_declaration);
@@ -443,6 +478,8 @@ bool NppConfig::loadSession(const std::string& path, Session& session)
 			fi.endPos = f.attribute("endPos").as_llong(0);
 			fi.userReadOnly = std::strcmp(f.attribute("userReadOnly").as_string(), "yes") == 0;
 			fi.untitleTabRenamed = std::strcmp(f.attribute("untitleTabRenamed").as_string(), "yes") == 0;
+			fi.tabColour = f.attribute("tabColourId").as_int(-1);
+			fi.tabPinned = std::strcmp(f.attribute("tabPinned").as_string(), "yes") == 0;
 			long long lo = f.attribute("originalFileLastModifTimestamp").as_llong(0);
 			long long hi = f.attribute("originalFileLastModifTimestampHigh").as_llong(0);
 			fi.originalFileLastModifTimestamp = (hi << 32) | (lo & 0xFFFFFFFF);
@@ -486,8 +523,8 @@ bool NppConfig::saveSession(const std::string& path, const Session& session)
 			f.append_attribute("backupFilePath") = fi.backupFilePath.c_str();
 			f.append_attribute("originalFileLastModifTimestamp") = (long long)(fi.originalFileLastModifTimestamp & 0xFFFFFFFF);
 			f.append_attribute("originalFileLastModifTimestampHigh") = (long long)(fi.originalFileLastModifTimestamp >> 32);
-			f.append_attribute("tabColourId") = -1;
-			f.append_attribute("tabPinned") = "no";
+			f.append_attribute("tabColourId") = fi.tabColour;
+			f.append_attribute("tabPinned") = fi.tabPinned ? "yes" : "no";
 			if (fi.untitleTabRenamed)
 				f.append_attribute("untitleTabRenamed") = "yes";
 			for (long m : fi.marks)

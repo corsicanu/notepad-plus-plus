@@ -222,7 +222,8 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 			(mi.keyEquivalentModifierMask & NSEventModifierFlagOption) ? @"⌥" : @"",
 			(mi.keyEquivalentModifierMask & NSEventModifierFlagShift) ? @"⇧" : @"",
 			(mi.keyEquivalentModifierMask & NSEventModifierFlagCommand) ? [@"⌘" stringByAppendingString: mi.keyEquivalent] : mi.keyEquivalent] : @"";
-		printf("%*s%s %s (%ld)%s\n", depth * 2, "", mi.submenu ? ">" : enabled ? "+" : "-", mi.title.UTF8String, (long)mi.tag, key.UTF8String);
+		printf("%*s%s %s%s (%ld)%s\n", depth * 2, "", mi.submenu ? ">" : enabled ? "+" : "-", mi.state == NSControlStateValueOn ? "✓ " : "",
+		       mi.title.UTF8String, (long)mi.tag, key.UTF8String);
 		if (mi.submenu)
 			[self dumpMenu: mi.submenu depth: depth + 1];
 	}

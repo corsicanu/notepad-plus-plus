@@ -911,7 +911,7 @@ namespace
 		return;
 
 	int total = 0;
-	int filesChanged = 0;
+
 	for (NSString* f in files)
 	{
 		__block int nb = 0;
@@ -931,7 +931,7 @@ namespace
 		if (nb > 0)
 		{
 			total += nb;
-			++filesChanged;
+
 		}
 	}
 	[_host documentsModifiedByReplace];

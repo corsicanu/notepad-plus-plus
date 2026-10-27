@@ -1,6 +1,8 @@
 #import "NppMainWindowInternal.h"
 #import "NppTabBar.h"
 #import "NppIncrementalFind.h"
+#import "NppToolbar.h"
+#import "NppContextMenus.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -44,6 +46,8 @@ namespace
 	NppFindReplaceDlg* _findReplaceDlg;
 	NSMutableArray<NSString*>* _closedFiles;   // for "Restore Recent Closed File"
 	NppIncrementalFind* _incFind;
+	NppToolbar* _toolbar;
+	NSLayoutConstraint* _toolbarHeight;
 	NSView* _incBarHolder;
 	NSLayoutConstraint* _incBarHeight;
 }
@@ -182,11 +186,25 @@ namespace
 	_incBarHolder.hidden = YES;
 	_incBarHeight = [_incBarHolder.heightAnchor constraintEqualToConstant: 0];
 
+	// Toolbar from upstream's toolBarIcons[].
+	_toolbar = [[NppToolbar alloc] initWithFrame: NSZeroRect];
+	_toolbar.translatesAutoresizingMaskIntoConstraints = NO;
+	__weak NppMainWindow* weakSelf = self;
+	_toolbar.onCommand = ^(int cmd) { [weakSelf runToolbarCommand: cmd]; };
+	_toolbar.isEnabled = ^BOOL(int cmd) { return [weakSelf commandState: cmd checked: nil]; };
+	_toolbar.isChecked = ^BOOL(int cmd) { BOOL on = NO; [weakSelf commandState: cmd checked: &on]; return on; };
+	_toolbarHeight = [_toolbar.heightAnchor constraintEqualToConstant: _toolbar.preferredHeight];
+
+	[content addSubview: _toolbar];
 	[content addSubview: _split];
 	[content addSubview: _incBarHolder];
 	[content addSubview: _statusBar];
 	[NSLayoutConstraint activateConstraints: @[
-		[_split.topAnchor constraintEqualToAnchor: content.topAnchor],
+		[_toolbar.topAnchor constraintEqualToAnchor: content.topAnchor],
+		[_toolbar.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
+		[_toolbar.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
+		_toolbarHeight,
+		[_split.topAnchor constraintEqualToAnchor: _toolbar.bottomAnchor],
 		[_split.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
 		[_split.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
 		[_split.bottomAnchor constraintEqualToAnchor: _incBarHolder.topAnchor],
@@ -202,6 +220,11 @@ namespace
 
 	[self setupEditor: _editor];
 	[self applySettingsToEditor: _editor];
+	_editor.menu = [NppContextMenus editorContextMenu];
+	[_editor message: SCI_USEPOPUP wParam: SC_POPUP_NEVER];
+	_toolbar.iconSet = (NppToolbarIconSet)NppSettings::instance()._toolbarIconSet;
+	_toolbarHeight.constant = NppSettings::instance()._toolbarShow ? _toolbar.preferredHeight : 0;
+	_toolbar.hidden = !NppSettings::instance()._toolbarShow;
 }
 
 - (void)setupEditor:(ScintillaView*)e
@@ -706,19 +729,41 @@ namespace
 
 #pragma mark - Display
 
+- (NSColor*)tabColor:(int)index
+{
+	if (index < 0 || index > 4)
+		return nil;
+	BOOL dark = [self.window.effectiveAppearance bestMatchFromAppearancesWithNames: @[NSAppearanceNameAqua, NSAppearanceNameDarkAqua]] == NSAppearanceNameDarkAqua;
+	std::string name = (dark ? "Tab color dark mode " : "Tab color ") + std::to_string(index + 1);
+	const NppStyle* st = LangManager::instance().globalStyle(name);
+	if (!st || st->bgColor < 0)
+		return nil;
+	int c = st->bgColor;
+	return [NSColor colorWithSRGBRed: ((c >> 16) & 0xFF) / 255.0 green: ((c >> 8) & 0xFF) / 255.0 blue: (c & 0xFF) / 255.0 alpha: 1];
+}
+
 - (void)refreshTabs
 {
-	NSMutableArray* titles = [NSMutableArray array];
-	NSMutableArray* states = [NSMutableArray array];
-	NSMutableArray* tips = [NSMutableArray array];
+	NSMutableArray* tabs = [NSMutableArray array];
 	for (NppBuffer* b in _buffers)
 	{
-		[titles addObject: b.displayName];
-		[states addObject: @(b.readOnly ? NppTabReadOnly : b.dirty ? NppTabUnsaved : NppTabSaved)];
-		[tips addObject: b.path ?: b.displayName];
+		NppTabInfo* t = [[NppTabInfo alloc] init];
+		t.title = b.displayName;
+		t.tooltip = b.path ?: b.displayName;
+		t.state = (b.readOnly || b.fileReadOnly) ? NppTabReadOnly : b.dirty ? NppTabUnsaved : NppTabSaved;
+		t.pinned = b.pinned;
+		t.color = [self tabColor: b.tabColor];
+		[tabs addObject: t];
 	}
-	[_tabBar setTabs: titles states: states tooltips: tips];
+	const NppSettings& s = NppSettings::instance();
+	_tabBar.showCloseButton = s._tabCloseButton;
+	_tabBar.doubleClickCloses = s._tabDoubleClickClose;
+	_tabBar.lockDrag = !s._tabDragAndDrop;
+	_tabBar.drawTopBar = s._tabDrawTopBar;
+	_tabBar.showPinButton = s._tabPinButton;
+	[_tabBar setTabs: tabs];
 	_tabBar.selectedIndex = _current;
+	[self updateToolbar];
 }
 
 - (void)updateTitle
@@ -844,6 +889,7 @@ static NSString* withThousands(long n)
 			break;
 		case SCN_UPDATEUI:
 			[self updateStatusBar];
+			[self updateToolbar];
 			[self highlightBraces];
 			if (n->updated & SC_UPDATE_SELECTION)
 				[self smartHighlight];
@@ -1000,6 +1046,60 @@ static NSString* withThousands(long n)
 	[_editor message: SCI_GETTEXTRANGEFULL wParam: 0 lParam: reinterpret_cast<sptr_t>(&tr)];
 	buf.resize(e - s);
 	return [NSString stringWithUTF8String: buf.c_str()] ?: @"";
+}
+
+#pragma mark - Toolbar
+
+- (void)runToolbarCommand:(int)cmd
+{
+	switch (cmd)
+	{
+		// Standard edit actions go to the focused editor like the menu items do.
+		case IDM_EDIT_CUT: [_editor message: SCI_CUT]; break;
+		case IDM_EDIT_COPY: [_editor message: SCI_COPY]; break;
+		case IDM_EDIT_PASTE: [_editor message: SCI_PASTE]; break;
+		case IDM_EDIT_UNDO: [_editor message: SCI_UNDO]; break;
+		case IDM_EDIT_REDO: [_editor message: SCI_REDO]; break;
+		default: [self runCommand: cmd]; break;
+	}
+	[self.window makeFirstResponder: _editor.content];
+}
+
+// Enabled/checked state of a command, from the same validation the menus use.
+- (BOOL)commandState:(int)cmd checked:(BOOL*)checked
+{
+	BOOL enabled;
+	NSMenuItem* mi = [[NSMenuItem alloc] initWithTitle: @"" action: @selector(nppCommand:) keyEquivalent: @""];
+	mi.tag = cmd;
+	switch (cmd)
+	{
+		case IDM_EDIT_CUT:
+		case IDM_EDIT_COPY:
+			enabled = ![_editor message: SCI_GETSELECTIONEMPTY];
+			break;
+		case IDM_EDIT_PASTE: enabled = [_editor message: SCI_CANPASTE]; break;
+		case IDM_EDIT_UNDO: enabled = [_editor message: SCI_CANUNDO]; break;
+		case IDM_EDIT_REDO: enabled = [_editor message: SCI_CANREDO]; break;
+		case IDM_FILE_SAVEALL:
+			enabled = NO;
+			for (NppBuffer* b in _buffers)
+				enabled |= b.dirty;
+			break;
+		default:
+			enabled = [self validateMenuItem: mi];
+			break;
+	}
+	if (checked)
+	{
+		[self validateMenuItem: mi];
+		*checked = mi.state == NSControlStateValueOn;
+	}
+	return enabled;
+}
+
+- (void)updateToolbar
+{
+	[_toolbar updateStates];
 }
 
 #pragma mark - Incremental search
@@ -1200,6 +1300,50 @@ static NSString* withThousands(long n)
 - (void)tabBarDidRequestNewTab:(NppTabBar*)tabBar
 {
 	[self newDocument];
+}
+
+- (NSMenu*)tabBar:(NppTabBar*)tabBar menuForTabAtIndex:(NSInteger)index
+{
+	static NSMenu* menu = nil;
+	if (!menu)
+		menu = [NppContextMenus tabContextMenu];
+	return menu;
+}
+
+- (void)tabBar:(NppTabBar*)tabBar didRequestPinTabAtIndex:(NSInteger)index
+{
+	[self activateBuffer: index];
+	[self togglePinCurrent];
+}
+
+// Port of the TCN_TABPINNED handling: pinned tabs gather on the left.
+- (void)togglePinCurrent
+{
+	NppBuffer* b = [self currentBuffer];
+	b.pinned = !b.pinned;
+	[_buffers removeObject: b];
+	NSUInteger pos = 0;
+	while (pos < _buffers.count && _buffers[pos].pinned)
+		++pos;
+	[_buffers insertObject: b atIndex: pos];
+	_current = pos;
+	[self refreshTabs];
+}
+
+- (void)setCurrentTabColor:(int)color
+{
+	[self currentBuffer].tabColor = color;
+	[self refreshTabs];
+}
+
+- (void)moveCurrentTabTo:(NSInteger)to
+{
+	NppBuffer* b = [self currentBuffer];
+	[_buffers removeObject: b];
+	to = std::max<NSInteger>(0, std::min<NSInteger>(to, _buffers.count));
+	[_buffers insertObject: b atIndex: to];
+	_current = to;
+	[self refreshTabs];
 }
 
 #pragma mark - Test hooks

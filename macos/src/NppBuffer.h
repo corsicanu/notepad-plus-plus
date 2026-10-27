@@ -28,6 +28,8 @@ typedef NS_ENUM(NSInteger, NppEOL) {
 @property (nonatomic) BOOL fileReadOnly;                // file is not writable
 @property (nonatomic, copy) NSDate* lastModified;       // disk timestamp at load/save
 @property (nonatomic, copy) NSString* backupPath;       // snapshot backup of unsaved changes
+@property (nonatomic) BOOL pinned;                      // pinned tab
+@property (nonatomic) int tabColor;                     // individual tab colour 0..4, -1 none
 
 // Scintilla document (SCI_CREATEDOCUMENT); owned by this buffer.
 @property (nonatomic, readonly) void* document;
