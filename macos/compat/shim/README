@@ -1,0 +1,3 @@
+Stand-ins for Win32-bound upstream headers, found before the real ones when
+an upstream source is compiled unchanged against them (see SHIM_SRC in the
+Makefile). Each declares only what that source uses.

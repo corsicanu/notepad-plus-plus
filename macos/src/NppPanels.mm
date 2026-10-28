@@ -5,6 +5,7 @@
 #import "NppMainWindowInternal.h"
 #import "NppPreferences.h"
 #import "NppWorkspacePanels.h"
+#import "NppFunctionList.h"
 
 #include "NppAsciiTable.h"
 #include "NppConfig.h"
@@ -481,6 +482,7 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 		case IDM_VIEW_DOCLIST: p = [[NppDocumentListPanel alloc] initWithWindow: self]; side = NppDockLeft; break;
 		case IDM_VIEW_FILEBROWSER: p = [[NppFolderAsWorkspacePanel alloc] initWithWindow: self]; side = NppDockLeft; break;
 		case IDM_VIEW_DOC_MAP: p = [[NppDocumentMapPanel alloc] initWithWindow: self]; break;
+		case IDM_VIEW_FUNC_LIST: p = [[NppFunctionListPanel alloc] initWithWindow: self]; break;
 		default: return nil;
 	}
 	// The side the user left it on (DockingManager curr: 0 left, 1 right).
@@ -564,10 +566,11 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 
 + (void)registerPanelCommands:(std::unordered_map<int, NppCommandHandler>&)t
 {
-	for (int cmd : {IDM_EDIT_CLIPBOARDHISTORY_PANEL, IDM_EDIT_CHAR_PANEL, IDM_VIEW_DOCLIST, IDM_VIEW_FILEBROWSER, IDM_VIEW_DOC_MAP})
+	for (int cmd : {IDM_EDIT_CLIPBOARDHISTORY_PANEL, IDM_EDIT_CHAR_PANEL, IDM_VIEW_DOCLIST, IDM_VIEW_FILEBROWSER, IDM_VIEW_DOC_MAP, IDM_VIEW_FUNC_LIST})
 		t[cmd] = ^(NppMainWindow* w) { [w togglePanel: cmd]; };
 	t[IDM_VIEW_SWITCHTO_DOCLIST] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_DOCLIST]; };
 	t[IDM_VIEW_SWITCHTO_FILEBROWSER] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_FILEBROWSER]; };
+	t[IDM_VIEW_SWITCHTO_FUNC_LIST] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_FUNC_LIST]; };
 	// File > Open Folder as Workspace...
 	t[IDM_FILE_OPENFOLDERASWORKSPACE] = ^(NppMainWindow* w) {
 		NSOpenPanel* p = [NSOpenPanel openPanel];

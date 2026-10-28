@@ -39,6 +39,7 @@ const std::vector<NppSettingEntry>& nppSettingsRegistry()
 		{"MISC", "fileSwitcherWithoutExtColumn", K::Bool, &s._fileSwitcherWithoutExtColumn},
 		{"MISC", "fileSwitcherWithoutPathColumn", K::Bool, &s._fileSwitcherWithoutPathColumn},
 		{"MISC", "fileSwitcherNoGroups", K::Bool, &s._fileSwitcherDisableListViewGroups},
+		{"MISC", "sortFunctionList", K::Bool, &s._shouldSortFunctionList},
 		{"CheckHistoryFiles", nullptr, K::TextBool, &s._checkHistoryFiles},
 		{"langsExcluded", "langMenuCompact", K::Bool, &s._langMenuCompact},
 		{"MISC", "backSlashIsEscapeCharacterForSql", K::Bool, &s._backSlashIsEscapeCharacterForSql},

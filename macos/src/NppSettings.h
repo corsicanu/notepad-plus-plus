@@ -174,6 +174,7 @@ struct NppSettings
 	bool _fileSwitcherWithoutExtColumn = false;   // Document List columns
 	bool _fileSwitcherWithoutPathColumn = true;
 	bool _fileSwitcherDisableListViewGroups = false;
+	bool _shouldSortFunctionList = false;
 	bool _wordCharUseDefault = true;
 	std::string _wordCharsAdded;
 	int _leftmostDelimiter = 40;

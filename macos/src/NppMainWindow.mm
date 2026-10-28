@@ -7,6 +7,7 @@
 #import "NppPreferences.h"
 #import "NppPanels.h"
 #import "NppWorkspacePanels.h"
+#import "NppFunctionList.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -967,6 +968,8 @@ static NSString* withThousands(long n)
 			[self syncScrollFrom: pane];
 		if ((n->nmhdr.code == SCN_UPDATEUI || n->nmhdr.code == SCN_ZOOM) && [_dock isPanelVisible: IDM_VIEW_DOC_MAP])
 			[(NppDocumentMapPanel*)[_dock panelForCommand: IDM_VIEW_DOC_MAP] scrollMap];
+		if (n->nmhdr.code == SCN_UPDATEUI && [_dock isPanelVisible: IDM_VIEW_FUNC_LIST])
+			[(NppFunctionListPanel*)[_dock panelForCommand: IDM_VIEW_FUNC_LIST] markEntry];
 		return;
 	}
 	switch (n->nmhdr.code)

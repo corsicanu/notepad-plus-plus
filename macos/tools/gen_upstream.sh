@@ -71,6 +71,10 @@ mv "$OUT/AutoCompletionImages.inc.tmp" "$OUT/AutoCompletionImages.inc"
 awk '/^wstring AsciiListView::getAscii/{m=1} m' "$SRC/WinControls/AnsiCharPanel/asciiListView.cpp" > "$OUT/AsciiListView.inc.tmp"
 mv "$OUT/AsciiListView.inc.tmp" "$OUT/AsciiListView.inc"
 
-for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys AutoCompletionImages AsciiListView; do
+# 13. Language names (ScintillaEditView.cpp: _langNameInfoArray[]), table body only.
+awk '/^LanguageNameInfo ScintillaEditView::_langNameInfoArray/{m=1; next} m&&/^};/{exit} m&&/^[[:space:]]*\{/' "$SRC/ScintillaComponent/ScintillaEditView.cpp" > "$OUT/LangNameInfo.inc.tmp"
+mv "$OUT/LangNameInfo.inc.tmp" "$OUT/LangNameInfo.inc"
+
+for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys AutoCompletionImages AsciiListView LangNameInfo; do
 	[ -s "$OUT/$f.inc" ] || { echo "gen_upstream: $f.inc is empty, upstream layout changed" >&2; exit 1; }
 done

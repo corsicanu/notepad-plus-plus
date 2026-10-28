@@ -32,7 +32,7 @@ APP_INC  := $(SCI_INC) $(LEX_INC) -I$(NPP)/src/pugixml -Isrc -Icompat -I$(GEN) \
             -I$(NPP)/src -I$(NPP)/src/MISC/Common -I$(NPP)/src/MISC/PluginsManager \
             -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange -I$(NPP)/src/uchardet \
             -I$(NPP)/src/WinControls/ColourPicker -I$(NPP)/src/WinControls/Preference -I$(NPP)/src/WinControls/shortcut \
-            -I$(NPP)/src/WinControls/Grid -I$(NPP)/src/WinControls/StaticDialog/RunDlg -I$(NPP)/src/WinControls/FileBrowser
+            -I$(NPP)/src/WinControls/Grid -I$(NPP)/src/WinControls/StaticDialog/RunDlg -I$(NPP)/src/WinControls/FileBrowser -I$(NPP)/src/WinControls/FunctionList
 
 # --- Scintilla (core + Cocoa platform layer) -------------------------------
 SCI_SRC  := $(wildcard $(SCI)/src/*.cxx)
@@ -48,6 +48,10 @@ LEX_OBJ  := $(patsubst $(LEX)/%,$(OBJ)/lex/%.o,$(LEX_SRC))
 # --- Portable upstream PowerEditor sources, compiled unchanged ------------
 NPPLIB_SRC := $(wildcard $(NPP)/src/uchardet/*.cpp) $(NPP)/src/EncodingMapper.cpp
 NPPLIB_OBJ := $(patsubst $(NPP)/src/%,$(OBJ)/npp/%.o,$(NPPLIB_SRC))
+
+# --- Upstream sources compiled unchanged against compat/shim/ --------------
+SHIM_SRC := $(NPP)/src/WinControls/FunctionList/functionParser.cpp
+SHIM_OBJ := $(patsubst $(NPP)/src/%,$(OBJ)/shim/%.o,$(SHIM_SRC))
 
 # --- The app ---------------------------------------------------------------
 APP_SRC  := $(wildcard src/*.mm) $(wildcard src/*.cpp)
@@ -88,12 +92,13 @@ $(OBJ)/lex/%.cxx.o: $(LEX)/%.cxx
 # Tables lifted from upstream sources (see tools/gen_upstream.sh).
 GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc \
             $(GEN)/ToolbarIcons.inc $(GEN)/TabContextMenu.inc $(GEN)/PrefPages.inc $(GEN)/MenuFolderPositions.inc \
-            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc $(GEN)/AutoCompletionImages.inc $(GEN)/AsciiListView.inc
+            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc $(GEN)/AutoCompletionImages.inc $(GEN)/AsciiListView.inc $(GEN)/LangNameInfo.inc
 $(GEN_INC): $(GEN)/.stamp
 $(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp $(NPP)/src/NppNotification.cpp \
              $(NPP)/src/WinControls/Preference/preferenceDlg.cpp $(NPP)/src/localization.cpp \
              $(NPP)/src/NppCommands.cpp $(NPP)/src/WinControls/shortcut/shortcut.cpp \
-             $(NPP)/src/ScintillaComponent/AutoCompletion.cpp $(NPP)/src/WinControls/AnsiCharPanel/asciiListView.cpp
+             $(NPP)/src/ScintillaComponent/AutoCompletion.cpp $(NPP)/src/WinControls/AnsiCharPanel/asciiListView.cpp \
+             $(NPP)/src/ScintillaComponent/ScintillaEditView.cpp
 	@echo "  GEN   upstream tables"
 	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
 	@touch $@
@@ -102,6 +107,11 @@ $(OBJ)/npp/%.cpp.o: $(NPP)/src/%.cpp
 	@mkdir -p $(dir $@)
 	@echo "  CXX   PowerEditor/src/$*.cpp"
 	@clang++ -std=c++17 $(CXXFLAGS) -w -Icompat -include compat/windows.h -I$(NPP)/src -I$(NPP)/src/uchardet $(SCI_INC) -c $< -o $@
+
+$(OBJ)/shim/%.cpp.o: $(NPP)/src/%.cpp $(wildcard compat/shim/*.h)
+	@mkdir -p $(dir $@)
+	@echo "  CXX   PowerEditor/src/$*.cpp (shim)"
+	@clang++ $(CXXSTD) $(CXXFLAGS) -w -Icompat/shim -Icompat -I$(NPP)/src/pugixml -Isrc -I$(NPP)/src -I$(NPP)/src/MISC/PluginsManager $(SCI_INC) -c $< -o $@
 
 $(OBJ)/app/%.mm.o: src/%.mm $(APP_HDR) $(GEN_INC)
 	@mkdir -p $(dir $@)
@@ -122,10 +132,10 @@ $(LIBLEX): $(LEX_OBJ)
 $(LIBNPP): $(NPPLIB_OBJ)
 	@rm -f $@ && libtool -static -o $@ $^ 2>/dev/null
 
-$(EXE): $(APP_OBJ) $(LIBSCI) $(LIBLEX) $(LIBNPP)
+$(EXE): $(APP_OBJ) $(SHIM_OBJ) $(LIBSCI) $(LIBLEX) $(LIBNPP)
 	@mkdir -p $(dir $@)
 	@echo "  LINK  Notepad++"
-	@clang++ $(ARCHS) $(MINOS) -fobjc-arc $(APP_OBJ) $(LIBSCI) $(LIBLEX) $(LIBNPP) $(FRAMEWORKS) -o $@
+	@clang++ $(ARCHS) $(MINOS) -fobjc-arc $(APP_OBJ) $(SHIM_OBJ) $(LIBSCI) $(LIBLEX) $(LIBNPP) $(FRAMEWORKS) -o $@
 
 # Upstream data files are copied verbatim, so the port picks up upstream
 # language/theme/localization updates on every merge from master.
@@ -141,6 +151,7 @@ resources: $(EXE)
 	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name '*Res.h' -o -name '*Rc.h' -o -name '*Resource.h' -o -name '*resource.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
 	@cp $(NPP)/installer/themes/*.xml $(RES)/themes/ 2>/dev/null || true
 	@cp $(NPP)/installer/nativeLang/*.xml $(RES)/localization/ 2>/dev/null || true
+	@rsync -a --delete $(NPP)/installer/functionList/ $(RES)/functionList/
 	@mkdir -p $(RES)/autoCompletion
 	@cp $(NPP)/installer/APIs/*.xml $(RES)/autoCompletion/
 	@for n in info_bar_bg mac_cursor_busy mac_cursor_flipped; do \
