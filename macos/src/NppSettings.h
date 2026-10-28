@@ -175,6 +175,16 @@ struct NppSettings
 	bool _fileSwitcherWithoutPathColumn = true;
 	bool _fileSwitcherDisableListViewGroups = false;
 	bool _shouldSortFunctionList = false;
+
+	// Print (<GUIConfig name="Print">, PrintSettings)
+	bool _printLineNumber = true;
+	bool _printFormFeedPageBreak = false;
+	int _printOption = 3;                       // SC_PRINT_COLOURONWHITE
+	std::string _printHeaderLeft, _printHeaderMiddle, _printHeaderRight, _printHeaderFontName;
+	int _printHeaderFontStyle = 0, _printHeaderFontSize = 0;
+	std::string _printFooterLeft, _printFooterMiddle, _printFooterRight, _printFooterFontName;
+	int _printFooterFontStyle = 0, _printFooterFontSize = 0;
+	int _printMargeLeft = 0, _printMargeTop = 0, _printMargeRight = 0, _printMargeBottom = 0;   // millimetres
 	bool _wordCharUseDefault = true;
 	std::string _wordCharsAdded;
 	int _leftmostDelimiter = 40;

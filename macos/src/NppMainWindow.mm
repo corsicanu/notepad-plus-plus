@@ -1830,6 +1830,11 @@ static NSString* withThousands(long n)
 		}
 		return;
 	}
+	if ([key isEqualToString: @"printpdf"])
+	{
+		[(id)self printDocument: NO toPDF: value];
+		return;
+	}
 	if ([key isEqualToString: @"state"])
 	{
 		std::string calltip;

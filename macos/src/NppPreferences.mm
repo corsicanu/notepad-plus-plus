@@ -45,6 +45,7 @@ namespace
 	NSMutableArray<NSView*>* _pages;
 	std::vector<Binding> _bindings;
 	BOOL _loading;
+	int _lastPrintField;           // header / footer edit the Add button inserts into
 }
 
 + (instancetype)shared
@@ -129,6 +130,26 @@ namespace
 		[cps addObject: cp > 0 ? [NSString stringWithFormat: @"CP%d", cp] : @"-"];
 	}
 	[_dlg setItems: cps forList: IDC_COMBO_OTHERCP];
+
+	// Print: header / footer fonts and sizes, variables for the header / footer fields.
+	NSMutableArray* sizes = [NSMutableArray array];
+	for (int i = 6; i < 15; ++i)
+		[sizes addObject: [NSString stringWithFormat: @"%d", i]];
+	[_dlg setItems: sizes forList: IDC_COMBO_HFONTSIZE];
+	[_dlg setItems: sizes forList: IDC_COMBO_FFONTSIZE];
+	[_dlg setItems: [NppPreferences printFontList] forList: IDC_COMBO_HFONTNAME];
+	[_dlg setItems: [NppPreferences printFontList] forList: IDC_COMBO_FFONTNAME];
+	[_dlg setItems: @[@"Full file name path", @"File name", @"File directory", @"Page", @"Short date format", @"Long date format", @"Time"]
+	       forList: IDC_COMBO_VARLIST];
+	[_dlg select: 0 inList: IDC_COMBO_VARLIST];
+}
+
+// Header / footer fonts: blank (the default font) then the installed families.
++ (NSArray<NSString*>*)printFontList
+{
+	static NSArray* list = [@[@""] arrayByAddingObjectsFromArray:
+		[NSFontManager.sharedFontManager.availableFontFamilies sortedArrayUsingSelector: @selector(localizedCaseInsensitiveCompare:)]];
+	return list;
 }
 
 // Controls for Windows-only features stay visible but disabled.
@@ -399,6 +420,60 @@ namespace
 	chk(IDC_BACKUPDIR_CHECK, s._useCustomBackupDir);
 	text(IDC_BACKUPDIR_EDIT, s._backupDir);
 
+	// Print
+	chk(IDC_CHECK_PRINTLINENUM, s._printLineNumber);
+	chk(IDC_CHECK_PRINTFORMFEED, s._printFormFeedPageBreak);
+	radio(IDC_RADIO_WYSIWYG, s._printOption, SC_PRINT_NORMAL);
+	radio(IDC_RADIO_INVERT, s._printOption, SC_PRINT_INVERTLIGHT);
+	radio(IDC_RADIO_BW, s._printOption, SC_PRINT_BLACKONWHITE);
+	radio(IDC_RADIO_NOBG, s._printOption, SC_PRINT_COLOURONWHITE);
+	intEdit(IDC_EDIT_ML, s._printMargeLeft);
+	intEdit(IDC_EDIT_MT, s._printMargeTop);
+	intEdit(IDC_EDIT_MR, s._printMargeRight);
+	intEdit(IDC_EDIT_MB, s._printMargeBottom);
+	text(IDC_EDIT_HLEFT, s._printHeaderLeft);
+	text(IDC_EDIT_HMIDDLE, s._printHeaderMiddle);
+	text(IDC_EDIT_HRIGHT, s._printHeaderRight);
+	text(IDC_EDIT_FLEFT, s._printFooterLeft);
+	text(IDC_EDIT_FMIDDLE, s._printFooterMiddle);
+	text(IDC_EDIT_FRIGHT, s._printFooterRight);
+	auto fontStyle = [&](int ctrl, int& style, int bit) {
+		Binding x{Binding::Check, ctrl};
+		int* p = &style;
+		x.get = [p, bit] { return (*p & bit) ? 1 : 0; };
+		x.set = [p, bit](int v) { *p = v ? (*p | bit) : (*p & ~bit); };
+		b.push_back(x);
+	};
+	fontStyle(IDC_CHECK_HBOLD, s._printHeaderFontStyle, FONTSTYLE_BOLD);
+	fontStyle(IDC_CHECK_HITALIC, s._printHeaderFontStyle, FONTSTYLE_ITALIC);
+	fontStyle(IDC_CHECK_FBOLD, s._printFooterFontStyle, FONTSTYLE_BOLD);
+	fontStyle(IDC_CHECK_FITALIC, s._printFooterFontStyle, FONTSTYLE_ITALIC);
+	// Font sizes 6..14 (0 = default 9), font names from the font list (first = default).
+	auto fontSize = [&](int ctrl, int& size) {
+		Binding x{Binding::Popup, ctrl};
+		int* p = &size;
+		x.get = [p] { return (*p >= 6 && *p <= 14) ? *p - 6 : 3; };
+		x.set = [p](int v) { *p = v >= 0 ? v + 6 : 0; };
+		b.push_back(x);
+	};
+	fontSize(IDC_COMBO_HFONTSIZE, s._printHeaderFontSize);
+	fontSize(IDC_COMBO_FFONTSIZE, s._printFooterFontSize);
+	auto fontName = [&](int ctrl, std::string& name) {
+		Binding x{Binding::Popup, ctrl};
+		std::string* p = &name;
+		x.get = [p] {
+			NSUInteger i = [[NppPreferences printFontList] indexOfObject: @(p->c_str())];
+			return i == NSNotFound ? 0 : (int)i;
+		};
+		x.set = [p](int v) {
+			NSArray* fonts = [NppPreferences printFontList];
+			*p = (v > 0 && v < (int)fonts.count) ? [fonts[v] UTF8String] : "";
+		};
+		b.push_back(x);
+	};
+	fontName(IDC_COMBO_HFONTNAME, s._printHeaderFontName);
+	fontName(IDC_COMBO_FFONTNAME, s._printFooterFontName);
+
 	// Auto-Completion
 	{
 		Binding x{Binding::Check, IDD_AUTOC_ENABLECHECK};
@@ -585,6 +660,23 @@ namespace
 		NppConfig::instance().save();
 		[_dlg endWith: IDCANCEL];
 		return YES;
+	}
+	if (cid == IDC_BUTTON_ADDVAR)
+	{
+		// Adds the chosen variable to the header / footer field that last had the focus.
+		static const char* const vars[] = {"$(FULL_CURRENT_PATH)", "$(FILE_NAME)", "$(CURRENT_DIRECTORY)", "$(CURRENT_PRINTING_PAGE)",
+		                                   "$(SHORT_DATE)", "$(LONG_DATE)", "$(TIME)"};
+		NSInteger i = [_dlg selectedIndex: IDC_COMBO_VARLIST];
+		if (i < 0 || i >= 7 || !_lastPrintField)
+			return YES;
+		[_dlg setText: _lastPrintField value: [[_dlg text: _lastPrintField] stringByAppendingString: @(vars[i])]];
+		return [self command: _lastPrintField notification: 0x0300];
+	}
+	if (cid == IDC_EDIT_HLEFT || cid == IDC_EDIT_HMIDDLE || cid == IDC_EDIT_HRIGHT ||
+	    cid == IDC_EDIT_FLEFT || cid == IDC_EDIT_FMIDDLE || cid == IDC_EDIT_FRIGHT)
+	{
+		_lastPrintField = cid;
+		[_dlg setText: IDC_EDIT_VIEWPANEL value: [_dlg text: cid]];
 	}
 	if (cid == IDC_BUTTON_LAUNCHSTYLECONF_CRLF || cid == IDC_BUTTON_NPC_LAUNCHSTYLECONF)
 	{

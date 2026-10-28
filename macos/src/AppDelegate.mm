@@ -212,6 +212,8 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 			[commands addObject: @[@"insert", args[++i]]];
 		else if ([args[i] isEqualToString: @"--macro-save"] && i + 1 < args.count)
 			[commands addObject: @[@"macrosave", args[++i]]];
+		else if ([args[i] isEqualToString: @"--print-pdf"] && i + 1 < args.count)
+			[commands addObject: @[@"printpdf", args[++i]]];
 		else if ([args[i] isEqualToString: @"--print-state"])
 			[commands addObject: @[@"state", @""]];
 		else if ([args[i] isEqualToString: @"--type"] && i + 1 < args.count)

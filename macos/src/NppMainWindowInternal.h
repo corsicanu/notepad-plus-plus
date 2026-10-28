@@ -119,3 +119,8 @@ enum
 - (void)callTipClicked:(int)direction;
 - (void)autoCompletionSelected:(SCNotification*)n;
 @end
+
+// Printing (NppPrint.mm).
+@interface NppMainWindow (Print)
+- (void)printDocument:(BOOL)showPanel toPDF:(NSString*)pdfPath;
+@end
