@@ -141,7 +141,13 @@ $(EXE): $(APP_OBJ) $(SHIM_OBJ) $(LIBSCI) $(LIBLEX) $(LIBNPP)
 # Upstream data files are copied verbatim, so the port picks up upstream
 # language/theme/localization updates on every merge from master.
 .PHONY: resources sign
-resources: $(EXE)
+# App icon from upstream's npp.ico (IDI_M30ICON).
+$(RES)/AppIcon.icns: $(NPP)/src/icons/npp.ico tools/ico2icns.sh
+	@mkdir -p $(RES)
+	@sh tools/ico2icns.sh $< $@
+	@echo "  ICON  AppIcon.icns"
+
+resources: $(EXE) $(RES)/AppIcon.icns
 	@mkdir -p $(RES)/themes $(RES)/localization
 	@cp Info.plist $(APP)/Contents/Info.plist
 	@cp $(NPP)/src/langs.model.xml $(RES)/langs.model.xml
