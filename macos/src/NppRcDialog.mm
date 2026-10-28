@@ -626,6 +626,11 @@ namespace
 				tv.font = font;
 				tv.editable = !hasStyle(st, "ES_READONLY");
 				tv.autoresizingMask = NSViewWidthSizable;
+				tv.richText = NO;
+				tv.automaticQuoteSubstitutionEnabled = NO;
+				tv.automaticDashSubstitutionEnabled = NO;
+				tv.automaticTextReplacementEnabled = NO;
+				tv.delegate = (id<NSTextViewDelegate>)owner;   // EN_CHANGE, see textDidChange:
 				sv.documentView = tv;
 				view = sv;
 			}
@@ -888,6 +893,22 @@ namespace
 	BOOL handled = _onCommand ? _onCommand(self, cid) : NO;
 	if (!handled && (cid == IDOK || cid == IDCANCEL))
 		[self endWith: cid];
+}
+
+// Multi-line edits: the change comes from the text view inside the item's scroll view.
+- (void)textDidChange:(NSNotification*)n
+{
+	for (NSNumber* cid in _items)
+	{
+		NSView* v = _items[cid];
+		if ([v isKindOfClass: NSScrollView.class] && ((NSScrollView*)v).documentView == n.object)
+		{
+			_lastNotification = 0x0300; // EN_CHANGE
+			[self dispatch: cid.intValue];
+			_lastNotification = 0;
+			return;
+		}
+	}
 }
 
 - (void)controlTextDidChange:(NSNotification*)n

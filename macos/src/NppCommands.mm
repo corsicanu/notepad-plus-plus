@@ -26,6 +26,7 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 + (void)registerHashCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerPrintCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerUserLangCommands:(std::unordered_map<int, NppCommandHandler>&)t;
++ (void)registerUdlDialogCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (BOOL)isUserLangCommand:(int)cmd;
 - (void)runUserLangCommand:(int)cmd;
 - (BOOL)validateUserLangCommand:(NSMenuItem*)item;
@@ -714,6 +715,7 @@ namespace
 	[NppMainWindow registerHashCommands: t];
 	[NppMainWindow registerPrintCommands: t];
 	[NppMainWindow registerUserLangCommands: t];
+	[NppMainWindow registerUdlDialogCommands: t];
 
 	return t;
 }

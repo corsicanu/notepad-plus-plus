@@ -124,3 +124,9 @@ enum
 @interface NppMainWindow (Print)
 - (void)printDocument:(BOOL)showPanel toPDF:(NSString*)pdfPath;
 @end
+
+// User Defined Language dialog (NppUdlDialog.mm).
+@interface NppMainWindow (UdlDialog)
+- (void)restyleUserLang:(NSString*)name;
+- (void)renameUserLang:(NSString*)oldName to:(NSString*)newName;
+@end

@@ -357,6 +357,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	if (s._rememberLastSession && !_noSession)
 		[_main saveSessionToPath: [NSString stringWithUTF8String: NppConfig::instance().sessionPath().c_str()] withBackups: snapshot];
 	[_main captureEditorSettings];
+	NppUdlManager::instance().save();
 	// Test runs leave the user's panel layout alone.
 	if (!_noSession)
 		[(id)_main captureDockingState];
