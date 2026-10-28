@@ -266,6 +266,35 @@ void NppShortcuts::load()
 	if (!doc.load_file(p.c_str()))
 		return;
 	pugi::xml_node root = doc.child("NotepadPlus");
+	_internalCommands.clear();
+	_scintillaKeys.clear();
+	auto readKey = [](const pugi::xml_node& n) {
+		NppKeyCombo k;
+		k._isCtrl = yes(n, "Ctrl");
+		k._isAlt = yes(n, "Alt");
+		k._isShift = yes(n, "Shift");
+		k._key = n.attribute("Key").as_int(0);
+		return k;
+	};
+	for (pugi::xml_node n = root.child("InternalCommands").child("Shortcut"); n; n = n.next_sibling("Shortcut"))
+	{
+		int id = n.attribute("id").as_int(-1);
+		if (id > 0)
+			_internalCommands.push_back({id, readKey(n)});
+	}
+	for (pugi::xml_node n = root.child("ScintillaKeys").child("ScintKey"); n; n = n.next_sibling("ScintKey"))
+	{
+		NppScintillaKey sk;
+		sk._scintId = n.attribute("ScintID").as_int(0);
+		sk._menuCmdId = n.attribute("menuCmdID").as_int(0);
+		NppKeyCombo first = readKey(n);
+		if (first._key)
+			sk._keys.push_back(first);
+		for (pugi::xml_node k = n.child("NextKey"); k; k = k.next_sibling("NextKey"))
+			sk._keys.push_back(readKey(k));
+		if (sk._scintId)
+			_scintillaKeys.push_back(sk);
+	}
 	for (pugi::xml_node n = root.child("Macros").child("Macro"); n; n = n.next_sibling("Macro"))
 	{
 		NppMacroShortcut m;
@@ -296,6 +325,21 @@ bool NppShortcuts::save()
 	if (!root)
 		root = doc.append_child("NotepadPlus");
 
+	auto writeKey = [](pugi::xml_node n, const NppKeyCombo& k) {
+		n.append_attribute("Ctrl") = k._isCtrl ? "yes" : "no";
+		n.append_attribute("Alt") = k._isAlt ? "yes" : "no";
+		n.append_attribute("Shift") = k._isShift ? "yes" : "no";
+		n.append_attribute("Key") = k._key;
+	};
+	// NppParameters::insertCmd
+	pugi::xml_node cmdRoot = replaceChild(root, "InternalCommands");
+	for (const auto& c : _internalCommands)
+	{
+		pugi::xml_node sc = cmdRoot.append_child("Shortcut");
+		sc.append_attribute("id") = c._id;
+		writeKey(sc, c._keyCombo);
+	}
+
 	pugi::xml_node macrosRoot = replaceChild(root, "Macros");
 	for (const auto& m : _macros)
 	{
@@ -322,6 +366,18 @@ bool NppShortcuts::save()
 		cmdRoot.append_child(pugi::node_pcdata).set_value(c._cmd.c_str());
 		if (!c._folderName.empty())
 			cmdRoot.append_attribute("FolderName") = c._folderName.c_str();
+	}
+
+	// NppParameters::insertScintKey
+	pugi::xml_node scintRoot = replaceChild(root, "ScintillaKeys");
+	for (const auto& sk : _scintillaKeys)
+	{
+		pugi::xml_node k = scintRoot.append_child("ScintKey");
+		k.append_attribute("ScintID") = sk._scintId;
+		k.append_attribute("menuCmdID") = sk._menuCmdId;
+		writeKey(k, sk._keys.empty() ? NppKeyCombo() : sk._keys[0]);
+		for (size_t i = 1; i < sk._keys.size(); ++i)
+			writeKey(k.append_child("NextKey"), sk._keys[i]);
 	}
 
 	if (!doc.save_file(p.c_str(), "\t", pugi::format_default, pugi::encoding_utf8))

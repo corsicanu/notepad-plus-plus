@@ -7,6 +7,7 @@
 #import "NppMenuBuilder.h"
 #import "NppRcDialog.h"
 #import "NppLocalization.h"
+#import "NppShortcutMapper.h"
 
 #include "NppShortcuts.h"
 #include "NppConfig.h"
@@ -68,52 +69,55 @@ namespace
 		return [NSString stringWithUTF8String: s.c_str()] ?: @"";
 	}
 
-	// Port of ShortcutMapper's Shortcut dialog (IDD_SHORTCUT_DLG): name + key.
-	bool shortcutDialog(NppShortcutEntry& e, NSString* title)
+}
+
+// Port of the Shortcut dialog (IDD_SHORTCUT_DLG): name + key. The name is
+// read-only for menu commands (_canModifyName).
+bool nppShortcutDialog(NppShortcutEntry& e, NSString* title, BOOL nameEditable)
+{
+	NppRcDialog* dlg = [[NppRcDialog alloc] initWithRC: @"shortcut.rc" dialog: @"IDD_SHORTCUT_DLG"];
+	[NppLocalization applyToDialog: dlg node: @"ShortcutMapper"];
+	if (title)
+		dlg.window.title = title;
+	NSMutableArray* names = [NSMutableArray array];
+	NSInteger sel = 0;
+	const auto& keys = NppShortcuts::namedKeys();
+	for (size_t i = 0; i < keys.size(); ++i)
 	{
-		NppRcDialog* dlg = [[NppRcDialog alloc] initWithRC: @"shortcut.rc" dialog: @"IDD_SHORTCUT_DLG"];
-		[NppLocalization applyToDialog: dlg node: @"ShortcutMapper"];
-		if (title)
-			dlg.window.title = title;
-		NSMutableArray* names = [NSMutableArray array];
-		NSInteger sel = 0;
-		const auto& keys = NppShortcuts::namedKeys();
-		for (size_t i = 0; i < keys.size(); ++i)
-		{
-			[names addObject: ns(keys[i].first)];
-			if (keys[i].second == e._keyCombo._key)
-				sel = i;
-		}
-		[dlg setItems: names forList: IDC_KEY_COMBO];
-		[dlg select: sel inList: IDC_KEY_COMBO];
-		[dlg setText: IDC_NAME_EDIT value: ns(e._name)];
-		[dlg setChecked: IDC_CTRL_CHECK value: e._keyCombo._isCtrl];
-		[dlg setChecked: IDC_ALT_CHECK value: e._keyCombo._isAlt];
-		[dlg setChecked: IDC_SHIFT_CHECK value: e._keyCombo._isShift];
-		[dlg show: IDC_WARNING_STATIC value: NO];
-		[dlg show: IDC_CONFLICT_STATIC value: NO];
-		auto updateOK = [dlg] { [dlg enable: IDOK value: [dlg text: IDC_NAME_EDIT].length > 0]; };
-		updateOK();
-		dlg.onCommand = ^BOOL(NppRcDialog* d, int cid) {
-			if (cid == IDC_NAME_EDIT)
-			{
-				[d enable: IDOK value: [d text: IDC_NAME_EDIT].length > 0];
-				return YES;
-			}
-			if (cid == IDOK && [d text: IDC_NAME_EDIT].length == 0)
-				return YES;
-			return NO;
-		};
-		if ([dlg runModal] != IDOK)
-			return false;
-		e._name = [dlg text: IDC_NAME_EDIT].UTF8String ?: "";
-		e._keyCombo._isCtrl = [dlg isChecked: IDC_CTRL_CHECK];
-		e._keyCombo._isAlt = [dlg isChecked: IDC_ALT_CHECK];
-		e._keyCombo._isShift = [dlg isChecked: IDC_SHIFT_CHECK];
-		NSInteger k = [dlg selectedIndex: IDC_KEY_COMBO];
-		e._keyCombo._key = (k >= 0 && k < (NSInteger)keys.size()) ? keys[k].second : 0;
-		return true;
+		[names addObject: ns(keys[i].first)];
+		if (keys[i].second == e._keyCombo._key)
+			sel = i;
 	}
+	[dlg setItems: names forList: IDC_KEY_COMBO];
+	[dlg select: sel inList: IDC_KEY_COMBO];
+	[dlg setText: IDC_NAME_EDIT value: ns(e._name)];
+	[dlg enable: IDC_NAME_EDIT value: nameEditable];
+	[dlg setChecked: IDC_CTRL_CHECK value: e._keyCombo._isCtrl];
+	[dlg setChecked: IDC_ALT_CHECK value: e._keyCombo._isAlt];
+	[dlg setChecked: IDC_SHIFT_CHECK value: e._keyCombo._isShift];
+	[dlg show: IDC_WARNING_STATIC value: NO];
+	[dlg show: IDC_CONFLICT_STATIC value: NO];
+	auto updateOK = [dlg] { [dlg enable: IDOK value: [dlg text: IDC_NAME_EDIT].length > 0]; };
+	updateOK();
+	dlg.onCommand = ^BOOL(NppRcDialog* d, int cid) {
+		if (cid == IDC_NAME_EDIT)
+		{
+			[d enable: IDOK value: [d text: IDC_NAME_EDIT].length > 0];
+			return YES;
+		}
+		if (cid == IDOK && [d text: IDC_NAME_EDIT].length == 0)
+			return YES;
+		return NO;
+	};
+	if ([dlg runModal] != IDOK)
+		return false;
+	e._name = [dlg text: IDC_NAME_EDIT].UTF8String ?: "";
+	e._keyCombo._isCtrl = [dlg isChecked: IDC_CTRL_CHECK];
+	e._keyCombo._isAlt = [dlg isChecked: IDC_ALT_CHECK];
+	e._keyCombo._isShift = [dlg isChecked: IDC_SHIFT_CHECK];
+	NSInteger k = [dlg selectedIndex: IDC_KEY_COMBO];
+	e._keyCombo._key = (k >= 0 && k < (NSInteger)keys.size()) ? keys[k].second : 0;
+	return true;
 }
 
 @implementation NppMainWindow (Macros)
@@ -130,7 +134,7 @@ namespace
 	};
 	t[IDM_MACRO_SAVECURRENTMACRO] = ^(NppMainWindow* w) {
 		NppMacroShortcut ms;
-		if (shortcutDialog(ms, nil))
+		if (nppShortcutDialog(ms, nil, YES))
 			[w addCurrentMacro: ms];
 	};
 	t[IDM_MACRO_RUNMULTIMACRODLG] = ^(NppMainWindow* w) {
@@ -139,6 +143,9 @@ namespace
 	};
 	t[IDM_EXECUTE] = ^(NppMainWindow* w) { [w showRunDialog]; };
 	t[IDM_EXECUTE_VALIDATE_SHORTCUTSXML] = ^(NppMainWindow*) { NppShortcuts::instance().validate(); };
+	t[IDM_SETTING_SHORTCUT_MAPPER] = ^(NppMainWindow* w) { [NppShortcutMapper showForWindow: w tab: NppShortcutMapperMainMenu]; };
+	t[IDM_SETTING_SHORTCUT_MAPPER_MACRO] = ^(NppMainWindow* w) { [NppShortcutMapper showForWindow: w tab: NppShortcutMapperMacros]; };
+	t[IDM_SETTING_SHORTCUT_MAPPER_RUN] = ^(NppMainWindow* w) { [NppShortcutMapper showForWindow: w tab: NppShortcutMapperRunCommands]; };
 }
 
 // Upstream checkMacroState.
@@ -625,7 +632,7 @@ namespace
 				if (!cmd.length)
 					return YES;
 				NppUserCommand uc;
-				if (!shortcutDialog(uc, nil))
+				if (!nppShortcutDialog(uc, nil, YES))
 					return YES;
 				uc._cmd = cmd.UTF8String;
 				NppShortcuts& sc = NppShortcuts::instance();

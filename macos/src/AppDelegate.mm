@@ -8,12 +8,14 @@
 #import "NppMenuBuilder.h"
 #import "NppTheme.h"
 #import "NppLocalization.h"
+#import "NppShortcutMapper.h"
 
 @interface NppMainWindow (MacroMenus)
 + (void)installShortcutsXmlItemsIn:(NSMenu*)bar;
 - (void)restoreDockingState;
 - (void)captureDockingState;
 - (BOOL)confirmCloseProjectPanels;
+- (NSArray*)allEditors;
 @end
 
 #include "LangManager.h"
@@ -118,6 +120,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	[NppMenuBuilder applyDefaultShortcuts: bar];
 	[NppLocalization applyToMainMenu: bar topOffset: 1];
 	[NppMainWindow installShortcutsXmlItemsIn: bar];
+	[NppShortcutMapper applyMenuShortcuts: bar];
 	NSApp.mainMenu = bar;
 	// After the bar is installed, so AppKit doesn't add its own "Window" menu
 	// when the localized title differs.
@@ -185,6 +188,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	[NSApp addObserver: self forKeyPath: @"effectiveAppearance" options: 0 context: nil];
 	_main = [[NppMainWindow alloc] init];
 	[_main showWindow: nil];
+	[NppShortcutMapper applyScintillaKeys: [(id)_main allEditors]];
 
 	// Command line: Notepad++ [--snapshot out.png] [--cmd ID]... file1 file2 ...
 	NSMutableArray* paths = [NSMutableArray array];

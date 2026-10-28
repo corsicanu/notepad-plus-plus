@@ -61,6 +61,21 @@ struct NppUserCommand : NppShortcutEntry
 	std::string _cmd;
 };
 
+// <InternalCommands><Shortcut id Ctrl Alt Shift Key/>: a menu command's key, changed by the user.
+struct NppInternalShortcut
+{
+	int _id = 0;
+	NppKeyCombo _keyCombo;
+};
+
+// <ScintillaKeys><ScintKey ScintID menuCmdID Ctrl Alt Shift Key><NextKey .../>
+struct NppScintillaKey
+{
+	int _scintId = 0;
+	int _menuCmdId = 0;
+	std::vector<NppKeyCombo> _keys;   // first one + NextKey entries; empty = no key
+};
+
 class NppShortcuts
 {
 public:
@@ -69,13 +84,15 @@ public:
 	// Reads shortcuts.xml from the settings folder (written from upstream's
 	// SHORTCUT_XML_CONTENT when missing).
 	void load();
-	// Rewrites the <Macros> and <UserDefinedCommands> nodes, keeps the rest.
+	// Rewrites <InternalCommands>, <Macros>, <UserDefinedCommands> and <ScintillaKeys>, keeps the rest.
 	bool save();
 
 	std::string path() const;
 
 	std::vector<NppMacroShortcut> _macros;
 	std::vector<NppUserCommand> _userCommands;
+	std::vector<NppInternalShortcut> _internalCommands;
+	std::vector<NppScintillaKey> _scintillaKeys;
 
 	// Integrity check of shortcuts.xml (config.xml "shortcutsXmlHMAC").
 	// Returns false when the file must be reviewed and validated first.

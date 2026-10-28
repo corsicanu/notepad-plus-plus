@@ -32,7 +32,7 @@ APP_INC  := $(SCI_INC) $(LEX_INC) -I$(NPP)/src/pugixml -Isrc -Icompat -I$(GEN) \
             -I$(NPP)/src -I$(NPP)/src/MISC/Common -I$(NPP)/src/MISC/PluginsManager \
             -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange -I$(NPP)/src/uchardet \
             -I$(NPP)/src/WinControls/ColourPicker -I$(NPP)/src/WinControls/Preference -I$(NPP)/src/WinControls/shortcut \
-            -I$(NPP)/src/WinControls/Grid -I$(NPP)/src/WinControls/StaticDialog/RunDlg -I$(NPP)/src/WinControls/FileBrowser -I$(NPP)/src/WinControls/FunctionList -I$(NPP)/src/WinControls/ProjectPanel
+            -I$(NPP)/src/WinControls/Grid -I$(NPP)/src/WinControls/StaticDialog/RunDlg -I$(NPP)/src/WinControls/FileBrowser -I$(NPP)/src/WinControls/FunctionList -I$(NPP)/src/WinControls/ProjectPanel -I$(NPP)/src/WinControls/Grid
 
 # --- Scintilla (core + Cocoa platform layer) -------------------------------
 SCI_SRC  := $(wildcard $(SCI)/src/*.cxx)
