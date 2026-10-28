@@ -144,7 +144,7 @@
 	const NppSettings& s = NppSettings::instance();
 	if (!s._isSnapshotMode || !s._rememberLastSession)
 		return;
-	for (NppBuffer* b in self.buffers)
+	for (NppBuffer* b in [self allBuffers])
 		[self writeBackupFor: b];
 }
 
@@ -160,6 +160,14 @@
 {
 	Session session;
 	[self saveCurrentViewState];
+	int active = [self activeView];
+	session.activeView = active;
+	for (int view = 0; view < 2; ++view)
+	{
+	if (![self paneVisible: view])
+		continue;
+	[self loadPane: view];
+	auto& files = view == 0 ? session.mainViewFiles : session.subViewFiles;
 	for (NppBuffer* b in self.buffers)
 	{
 		if (!b.path && !(withBackups && b.dirty))
@@ -199,9 +207,13 @@
 		else
 			[v message: SCI_SETDOCPOINTER wParam: 0 lParam: 0];
 		if (b == [self currentBuffer])
-			session.activeMainIndex = (int)session.mainViewFiles.size();
-		session.mainViewFiles.push_back(fi);
+			(view == 0 ? session.activeMainIndex : session.activeSubIndex) = (int)files.size();
+		files.push_back(fi);
 	}
+	}
+	[self loadPane: active];
+	if (session.subViewFiles.empty())
+		session.activeView = 0;
 	return session;
 }
 
@@ -210,21 +222,56 @@
 	NppConfig::saveSession(path.fileSystemRepresentation, [self currentSession: withBackups]);
 }
 
-// Port of Notepad_plus::loadSession (main view).
+// Port of Notepad_plus::loadSession: main view, then sub view (a document
+// listed in both views is a clone sharing one buffer).
 - (void)loadSessionFromPath:(NSString*)path
 {
 	Session session;
 	if (!NppConfig::loadSession(path.fileSystemRepresentation, session))
 		return;
-	NSInteger firstIndex = -1;
-	NSInteger active = -1;
-	for (size_t i = 0; i < session.mainViewFiles.size(); ++i)
+	[self switchToPane: 0];
+	[self loadSessionFiles: session.mainViewFiles active: session.activeMainIndex mainView: nil];
+	if (!session.subViewFiles.empty())
 	{
-		const SessionFileInfo& fi = session.mainViewFiles[i];
+		NSArray<NppBuffer*>* main = [self.buffers copy];
+		[self saveCurrentViewState];
+		[self showPane: 1];
+		[self loadPane: 1];
+		[self loadSessionFiles: session.subViewFiles active: session.activeSubIndex mainView: main];
+		if (self.buffers.count == 0)
+		{
+			[self loadPane: 0];
+			[self hidePane: 1];
+		}
+		else if (session.activeView != 1)
+			[self switchToPane: 0];
+		[self refreshAllTabs];
+	}
+}
+
+- (void)loadSessionFiles:(const std::vector<SessionFileInfo>&)files active:(int)activeIndex mainView:(NSArray<NppBuffer*>*)main
+{
+	NSInteger active = -1;
+	for (size_t i = 0; i < files.size(); ++i)
+	{
+		const SessionFileInfo& fi = files[i];
 		NSString* file = [NSString stringWithUTF8String: fi.fileName.c_str()];
 		NSString* backup = fi.backupFilePath.empty() ? nil : [NSString stringWithUTF8String: fi.backupFilePath.c_str()];
 		BOOL hasBackup = backup && [NSFileManager.defaultManager fileExistsAtPath: backup];
 		BOOL exists = [file hasPrefix: @"/"] && [NSFileManager.defaultManager fileExistsAtPath: file];
+
+		NppBuffer* clone = nil;
+		for (NppBuffer* m in main)
+			if ((m.path && [m.path isEqualToString: file]) || (!m.path && [m.displayName isEqualToString: file]))
+				clone = m;
+		if (clone)
+		{
+			[self.buffers addObject: clone];
+			NSInteger idx = self.buffers.count - 1;
+			if ((int)i == activeIndex)
+				active = idx;
+			continue;
+		}
 		if (!exists && !hasBackup)
 			continue;
 
@@ -240,9 +287,7 @@
 		b.anchorPos = fi.startPos;
 		b.caretPos = fi.endPos;
 		NSInteger idx = [self.buffers indexOfObject: b];
-		if (firstIndex < 0)
-			firstIndex = idx;
-		if ((int)i == session.activeMainIndex)
+		if ((int)i == activeIndex)
 			active = idx;
 		[self activateBuffer: idx];
 		for (long m : fi.marks)
@@ -251,6 +296,8 @@
 		for (long f : fi.folds)
 			[self.editor message: SCI_FOLDLINE wParam: f lParam: SC_FOLDACTION_CONTRACT];
 	}
+	if (active < 0 && self.buffers.count)
+		active = 0;
 	if (active >= 0)
 		[self activateBuffer: active];
 }
@@ -275,10 +322,10 @@
 	if (busy || !(s._fileAutoDetection & (cdEnabled4AllFiles | cdEnabled4CurrentFile)) || !NSApp.isActive)
 		return;
 	busy = YES;
-	NSArray* list = (s._fileAutoDetection & cdEnabled4AllFiles) ? [self.buffers copy] : ([self currentBuffer] ? @[[self currentBuffer]] : @[]);
+	NSArray* list = (s._fileAutoDetection & cdEnabled4AllFiles) ? [self allBuffers] : ([self currentBuffer] ? @[[self currentBuffer]] : @[]);
 	for (NppBuffer* b in list)
 	{
-		if (!b.path || ![self.buffers containsObject: b])
+		if (!b.path || ![[self allBuffers] containsObject: b])
 			continue;
 		if ([b fileDeleted])
 		{
@@ -290,11 +337,14 @@
 			[a addButtonWithTitle: @"No"];
 			b.lastModified = nil; // ask only once
 			if ([a runModal] == NSAlertSecondButtonReturn)
-				[self closeBufferAtIndex: [self.buffers indexOfObject: b] force: YES];
+			{
+				while ([self revealBuffer: b])
+					[self closeBufferAtIndex: self.currentIndex force: YES];
+			}
 			else
 			{
 				b.dirty = YES;
-				[self refreshTabs];
+				[self refreshAllTabs];
 			}
 			continue;
 		}
@@ -313,8 +363,7 @@
 			if ([a runModal] != NSAlertFirstButtonReturn)
 				continue;
 		}
-		NSInteger idx = [self.buffers indexOfObject: b];
-		[self activateBuffer: idx];
+		[self revealBuffer: b];
 		b.dirty = NO;
 		[self reloadCurrent];
 		if (s._fileAutoDetection & cdGo2end)

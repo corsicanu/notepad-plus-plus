@@ -263,6 +263,84 @@ namespace
 
 + (void)registerEditOps:(std::unordered_map<int, NppCommandHandler>&)t
 {
+	// ---- Paste Special (upstream CF_HTML / CF_RTF / CF_NPPTEXTLEN) ----
+	// Binary copy keeps NUL bytes: the raw selection goes on the pasteboard
+	// under a private type next to the plain text, as CF_NPPTEXTLEN does.
+	static NSPasteboardType const binaryType = @"org.notepad-plus-plus.binary";
+	for (int id : {IDM_EDIT_COPY_BINARY, IDM_EDIT_CUT_BINARY})
+	{
+		t[id] = ^(NppMainWindow* w) {
+			ScintillaView* v = w.editor;
+			size_t len = sci(v, SCI_GETSELTEXT);
+			if (!len)
+				return;
+			std::string text(len + 1, '\0');
+			sci(v, SCI_GETSELTEXT, 0, reinterpret_cast<sptr_t>(text.data()));
+			text.resize(len);
+			NSPasteboard* pb = NSPasteboard.generalPasteboard;
+			[pb clearContents];
+			[pb setData: [NSData dataWithBytes: text.data() length: text.size()] forType: binaryType];
+			NSString* str = [[NSString alloc] initWithBytes: text.data() length: strnlen(text.c_str(), text.size()) encoding: NSUTF8StringEncoding];
+			if (str)
+				[pb setString: str forType: NSPasteboardTypeString];
+			if (id == IDM_EDIT_CUT_BINARY)
+				sci(v, SCI_REPLACESEL, 0, reinterpret_cast<sptr_t>(""));
+		};
+	}
+	t[IDM_EDIT_PASTE_BINARY] = ^(NppMainWindow* w) {
+		ScintillaView* v = w.editor;
+		NSPasteboard* pb = NSPasteboard.generalPasteboard;
+		if (NSData* d = [pb dataForType: binaryType])
+		{
+			sci(v, SCI_REPLACESEL, 0, reinterpret_cast<sptr_t>(""));
+			sci(v, SCI_ADDTEXT, d.length, reinterpret_cast<sptr_t>(d.bytes));
+		}
+		else if (NSString* str = [pb stringForType: NSPasteboardTypeString])
+			sci(v, SCI_REPLACESEL, 0, reinterpret_cast<sptr_t>(str.UTF8String));
+	};
+	// Paste HTML / RTF Content inserts the markup itself, not the rendered text.
+	for (int id : {IDM_EDIT_PASTE_AS_HTML, IDM_EDIT_PASTE_AS_RTF})
+	{
+		t[id] = ^(NppMainWindow* w) {
+			NSPasteboard* pb = NSPasteboard.generalPasteboard;
+			NSData* d = [pb dataForType: id == IDM_EDIT_PASTE_AS_HTML ? NSPasteboardTypeHTML : NSPasteboardTypeRTF];
+			if (!d)
+				return;
+			std::string text(static_cast<const char*>(d.bytes), d.length);
+			sci(w.editor, SCI_REPLACESEL, 0, reinterpret_cast<sptr_t>(text.c_str()));
+		};
+	}
+
+	// ---- Redact Selection (█, or ● with Shift) ----
+	t[IDM_EDIT_REDACT_SELECTION] = ^(NppMainWindow* w) {
+		ScintillaView* v = w.editor;
+		const bool useBullet = (NSEvent.modifierFlags & NSEventModifierFlagShift) != 0;
+		const bool isUnicode = sci(v, SCI_GETCODEPAGE) == SC_CP_UTF8;
+		std::string maskSymbol = isUnicode ? (useBullet ? "\xE2\x97\x8F" : "\xE2\x96\x88") : (useBullet ? "." : "#");
+		sci(v, SCI_BEGINUNDOACTION);
+		const int selCount = static_cast<int>(sci(v, SCI_GETSELECTIONS));
+		for (int i = 0; i < selCount; ++i)
+		{
+			sptr_t start = sci(v, SCI_GETSELECTIONNSTART, i);
+			sptr_t end = sci(v, SCI_GETSELECTIONNEND, i);
+			int charCount = static_cast<int>(sci(v, SCI_COUNTCHARACTERS, start, end));
+			if (charCount <= 0)
+				continue;
+			std::string maskStr;
+			for (int j = 0; j < charCount; ++j)
+			{
+				char c = static_cast<char>(sci(v, SCI_GETCHARAT, sci(v, SCI_POSITIONRELATIVE, start, j)));
+				if (c == '\r' || c == '\n')
+					maskStr += c;
+				else
+					maskStr += maskSymbol;
+			}
+			sci(v, SCI_SETTARGETRANGE, start, end);
+			sci(v, SCI_REPLACETARGET, static_cast<uptr_t>(-1), reinterpret_cast<sptr_t>(maskStr.c_str()));
+		}
+		sci(v, SCI_ENDUNDOACTION);
+	};
+
 	// ---- Sorting (upstream Sorters.h) ----
 	for (int id : {IDM_EDIT_SORTLINES_LEXICOGRAPHIC_ASCENDING, IDM_EDIT_SORTLINES_LEXICOGRAPHIC_DESCENDING,
 	               IDM_EDIT_SORTLINES_LEXICO_CASE_INSENS_ASCENDING, IDM_EDIT_SORTLINES_LEXICO_CASE_INSENS_DESCENDING,

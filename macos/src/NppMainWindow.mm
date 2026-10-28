@@ -25,6 +25,34 @@ namespace
 }
 
 @interface NppMainWindow () <NppTabBarDelegate, ScintillaNotificationProtocol, NSWindowDelegate, NSSplitViewDelegate>
+- (void)notification:(SCNotification*)n fromPane:(int)pane;
+@end
+
+// One of Notepad++'s two views (MAIN_VIEW / SUB_VIEW): tab bar, editor and
+// its documents. The main window keeps the active view's state in its own
+// ivars and swaps them with this object when the active view changes.
+@interface NppPane : NSObject
+@property (nonatomic, strong) NSView* container;
+@property (nonatomic, strong) NppTabBar* tabBar;
+@property (nonatomic, strong) ScintillaView* editor;
+@property (nonatomic, strong) NSMutableArray<NppBuffer*>* buffers;
+@property (nonatomic) NSInteger current;
+@end
+
+@implementation NppPane
+@end
+
+// Tells the window which view a Scintilla notification came from.
+@interface NppEditorProxy : NSObject <ScintillaNotificationProtocol>
+@property (nonatomic, weak) NppMainWindow* window;
+@property (nonatomic) int pane;
+@end
+
+@implementation NppEditorProxy
+- (void)notification:(SCNotification*)n
+{
+	[_window notification: n fromPane: _pane];
+}
 @end
 
 @implementation NppMainWindow
@@ -52,6 +80,13 @@ namespace
 	NSLayoutConstraint* _toolbarHeight;
 	NSView* _incBarHolder;
 	NSLayoutConstraint* _incBarHeight;
+
+	NppPane* _panes[2];
+	NppEditorProxy* _proxies[2];
+	int _activePane;
+	NSSplitView* _viewSplit;       // main view | sub view
+	BOOL _syncV, _syncH;
+	long _syncLine[2], _syncX[2];
 }
 
 @synthesize editor = _editor;
@@ -98,9 +133,7 @@ namespace
 
 	if ((self = [super initWithWindow: window]))
 	{
-		_buffers = [NSMutableArray array];
 		_closedFiles = [NSMutableArray array];
-		_current = -1;
 		window.delegate = self;
 		[self buildUI];
 		[self restoreWindowFrame];
@@ -141,29 +174,50 @@ namespace
 {
 	NSView* content = self.window.contentView;
 
-	_tabBar = [[NppTabBar alloc] initWithFrame: NSZeroRect];
-	_tabBar.delegate = self;
-	_tabBar.translatesAutoresizingMaskIntoConstraints = NO;
-
-	_editor = [[ScintillaView alloc] initWithFrame: NSMakeRect(0, 0, 400, 400)];
-	_editor.delegate = self;
-	_editor.translatesAutoresizingMaskIntoConstraints = NO;
+	for (int i = 0; i < 2; ++i)
+	{
+		NppPane* p = [[NppPane alloc] init];
+		p.tabBar = [[NppTabBar alloc] initWithFrame: NSZeroRect];
+		p.tabBar.delegate = self;
+		p.tabBar.translatesAutoresizingMaskIntoConstraints = NO;
+		p.editor = [[ScintillaView alloc] initWithFrame: NSMakeRect(0, 0, 400, 400)];
+		_proxies[i] = [[NppEditorProxy alloc] init];
+		_proxies[i].window = self;
+		_proxies[i].pane = i;
+		p.editor.delegate = _proxies[i];
+		p.editor.translatesAutoresizingMaskIntoConstraints = NO;
+		p.buffers = [NSMutableArray array];
+		p.current = -1;
+		NSView* c = [[NSView alloc] init];
+		[c addSubview: p.tabBar];
+		[c addSubview: p.editor];
+		[NSLayoutConstraint activateConstraints: @[
+			[p.tabBar.topAnchor constraintEqualToAnchor: c.topAnchor],
+			[p.tabBar.leadingAnchor constraintEqualToAnchor: c.leadingAnchor],
+			[p.tabBar.trailingAnchor constraintEqualToAnchor: c.trailingAnchor],
+			[p.tabBar.heightAnchor constraintEqualToConstant: 26],
+			[p.editor.topAnchor constraintEqualToAnchor: p.tabBar.bottomAnchor],
+			[p.editor.leadingAnchor constraintEqualToAnchor: c.leadingAnchor],
+			[p.editor.trailingAnchor constraintEqualToAnchor: c.trailingAnchor],
+			[p.editor.bottomAnchor constraintEqualToAnchor: c.bottomAnchor],
+		]];
+		p.container = c;
+		_panes[i] = p;
+	}
+	_activePane = 0;
+	_tabBar = _panes[0].tabBar;
+	_editor = _panes[0].editor;
+	_buffers = _panes[0].buffers;
+	_current = -1;
 
 	_invisible = [[ScintillaView alloc] initWithFrame: NSMakeRect(0, 0, 200, 200)];
 
-	_editorArea = [[NSView alloc] init];
-	[_editorArea addSubview: _tabBar];
-	[_editorArea addSubview: _editor];
-	[NSLayoutConstraint activateConstraints: @[
-		[_tabBar.topAnchor constraintEqualToAnchor: _editorArea.topAnchor],
-		[_tabBar.leadingAnchor constraintEqualToAnchor: _editorArea.leadingAnchor],
-		[_tabBar.trailingAnchor constraintEqualToAnchor: _editorArea.trailingAnchor],
-		[_tabBar.heightAnchor constraintEqualToConstant: 26],
-		[_editor.topAnchor constraintEqualToAnchor: _tabBar.bottomAnchor],
-		[_editor.leadingAnchor constraintEqualToAnchor: _editorArea.leadingAnchor],
-		[_editor.trailingAnchor constraintEqualToAnchor: _editorArea.trailingAnchor],
-		[_editor.bottomAnchor constraintEqualToAnchor: _editorArea.bottomAnchor],
-	]];
+	// Main view | sub view, side by side (Notepad++'s default vertical splitter).
+	_viewSplit = [[NSSplitView alloc] init];
+	_viewSplit.vertical = YES;
+	_viewSplit.dividerStyle = NSSplitViewDividerStyleThin;
+	[_viewSplit addArrangedSubview: _panes[0].container];
+	_editorArea = _viewSplit;
 
 	_split = [[NSSplitView alloc] init];
 	_split.vertical = NO;
@@ -224,10 +278,14 @@ namespace
 		[_statusBar.heightAnchor constraintEqualToConstant: kStatusHeight],
 	]];
 
-	[self setupEditor: _editor];
-	[self applySettingsToEditor: _editor];
-	_editor.menu = [NppContextMenus editorContextMenu];
-	[_editor message: SCI_USEPOPUP wParam: SC_POPUP_NEVER];
+	NSMenu* contextMenu = [NppContextMenus editorContextMenu];
+	for (NppPane* p : {_panes[0], _panes[1]})
+	{
+		[self setupEditor: p.editor];
+		[self applySettingsToEditor: p.editor];
+		p.editor.menu = contextMenu;
+		[p.editor message: SCI_USEPOPUP wParam: SC_POPUP_NEVER];
+	}
 	_toolbar.iconSet = (NppToolbarIconSet)NppSettings::instance()._toolbarIconSet;
 	_toolbarHeight.constant = NppSettings::instance()._toolbarShow ? _toolbar.preferredHeight : 0;
 	_toolbar.hidden = !NppSettings::instance()._toolbarShow;
@@ -318,7 +376,7 @@ namespace
 	{
 		NSString* name = [NSString stringWithFormat: @"new %d", n];
 		BOOL used = NO;
-		for (NppBuffer* b in _buffers)
+		for (NppBuffer* b in [self allBuffers])
 			if (!b.path && [b.untitledName isEqualToString: name])
 				used = YES;
 		if (!used)
@@ -549,7 +607,17 @@ namespace
 		[_closedFiles addObject: b.path];
 	}
 
-	// Last tab closing leaves a fresh "new 1", as Notepad++ does.
+	// Last tab of a view: the sub view (or an empty main view next to a
+	// visible sub view) disappears; otherwise a fresh "new 1" stays, as upstream.
+	if (_buffers.count == 1 && [self paneVisible: 1 - _activePane])
+	{
+		[_buffers removeObjectAtIndex: 0];
+		_current = -1;
+		if (![_panes[1 - _activePane].buffers containsObject: b])
+			[b releaseDocumentWithEditor: _editor];
+		[self hidePane: _activePane];
+		return;
+	}
 	if (_buffers.count == 1)
 	{
 		NppBuffer* fresh = [self addBuffer];
@@ -562,7 +630,9 @@ namespace
 		_current = -1;
 		[self activateBuffer: next];
 	}
-	[b releaseDocumentWithEditor: _editor];
+	// A cloned document stays alive while the other view still shows it.
+	if (![_panes[1 - _activePane].buffers containsObject: b])
+		[b releaseDocumentWithEditor: _editor];
 	[_buffers removeObjectAtIndex: index];
 	if (_current > index)
 		--_current;
@@ -625,7 +695,7 @@ namespace
 	{
 		if (!b.dirty)
 			continue;
-		[self activateBuffer: [_buffers indexOfObject: b]];
+		[self revealBuffer: b];
 		NSModalResponse r = [self askSave: b];
 		if (r == NSAlertSecondButtonReturn)
 			return NO;
@@ -637,7 +707,7 @@ namespace
 
 - (BOOL)confirmCloseAll
 {
-	return [self confirmCloseBuffers: [_buffers copy]];
+	return [self confirmCloseBuffers: [self allBuffers]];
 }
 
 - (void)reloadCurrent
@@ -879,6 +949,32 @@ static NSString* withThousands(long n)
 
 #pragma mark - Scintilla notifications
 
+- (void)notification:(SCNotification*)n fromPane:(int)pane
+{
+	if (pane == _activePane)
+	{
+		[self notification: n];
+		if (n->nmhdr.code == SCN_UPDATEUI && (n->updated & SC_UPDATE_V_SCROLL || n->updated & SC_UPDATE_H_SCROLL))
+			[self syncScrollFrom: pane];
+		return;
+	}
+	switch (n->nmhdr.code)
+	{
+		case SCN_FOCUSIN:
+			[self switchToPane: pane];
+			break;
+		case SCN_SAVEPOINTREACHED:
+		case SCN_SAVEPOINTLEFT:
+		{
+			NppPane* p = _panes[pane];
+			if (p.current >= 0 && p.current < (NSInteger)p.buffers.count)
+				p.buffers[p.current].dirty = n->nmhdr.code == SCN_SAVEPOINTLEFT;
+			[self refreshAllTabs];
+			break;
+		}
+	}
+}
+
 - (void)notification:(SCNotification*)n
 {
 	NppBuffer* b = [self currentBuffer];
@@ -1054,14 +1150,250 @@ static NSString* withThousands(long n)
 	return [NSString stringWithUTF8String: buf.c_str()] ?: @"";
 }
 
+#pragma mark - Views (main / sub)
+
+- (BOOL)paneVisible:(int)i
+{
+	return _panes[i].container.superview == _viewSplit;
+}
+
+// Saves the active view's state into its pane object and loads another one.
+- (void)loadPane:(int)i
+{
+	NppPane* old = _panes[_activePane];
+	old.current = _current;
+	_activePane = i;
+	NppPane* p = _panes[i];
+	_tabBar = p.tabBar;
+	_editor = p.editor;
+	_buffers = p.buffers;
+	_current = p.current;
+}
+
+- (void)switchToPane:(int)i
+{
+	if (i == _activePane || ![self paneVisible: i])
+		return;
+	[self saveViewState];
+	[self loadPane: i];
+	[self.window makeFirstResponder: _editor.content];
+	[self refreshAllTabs];
+	[self updateStatusBar];
+	[self updateTitle];
+}
+
+- (void)focusPaneOfTabBar:(NppTabBar*)tabBar
+{
+	for (int i = 0; i < 2; ++i)
+		if (_panes[i].tabBar == tabBar)
+			[self switchToPane: i];
+}
+
+// Runs `block` with each visible view loaded as the active one.
+- (void)forBothPanes:(void (^)(void))block
+{
+	int active = _activePane;
+	for (int i = 0; i < 2; ++i)
+	{
+		if (![self paneVisible: i])
+			continue;
+		[self loadPane: i];
+		block();
+	}
+	[self loadPane: active];
+}
+
+- (void)refreshAllTabs
+{
+	[self forBothPanes: ^{ [self refreshTabs]; }];
+	// The inactive view's tab bar draws without the active-tab stripe.
+	_panes[1 - _activePane].tabBar.drawTopBar = NO;
+	_panes[_activePane].tabBar.drawTopBar = NppSettings::instance()._tabDrawTopBar;
+	[_panes[0].tabBar setNeedsDisplay: YES];
+	[_panes[1].tabBar setNeedsDisplay: YES];
+}
+
+- (void)showPane:(int)i
+{
+	if ([self paneVisible: i])
+		return;
+	if (i == 1)
+		[_viewSplit addArrangedSubview: _panes[1].container];
+	else
+		[_viewSplit insertArrangedSubview: _panes[0].container atIndex: 0];
+	[_viewSplit layoutSubtreeIfNeeded];
+	[_viewSplit setPosition: _viewSplit.bounds.size.width / 2 ofDividerAtIndex: 0];
+}
+
+- (void)hidePane:(int)i
+{
+	[_panes[i].container removeFromSuperview];
+	if (_activePane == i)
+	{
+		_panes[i].current = -1;
+		[self loadPane: 1 - i];
+		[self activateBuffer: _current];
+	}
+	[self refreshAllTabs];
+}
+
+// Port of Notepad_plus::docGotoAnotherEditView: move (or clone) the current
+// document to the other view.
+- (void)sendCurrentToOtherView:(BOOL)clone
+{
+	NppBuffer* b = [self currentBuffer];
+	if (!b)
+		return;
+	int from = _activePane, to = 1 - _activePane;
+	[self saveViewState];
+	long caret = b.caretPos, anchor = b.anchorPos, first = b.firstVisibleLine;
+
+	if (!clone)
+	{
+		// Leaving the view: drop the tab without releasing the document.
+		if (_buffers.count == 1 && from == 0 && ![self paneVisible: to])
+		{
+			// Keep the main view alive with a fresh document, like upstream.
+			NppBuffer* fresh = [self addBuffer];
+			fresh.untitledName = [self nextUntitledName];
+		}
+		NSInteger idx = [_buffers indexOfObject: b];
+		[_buffers removeObjectAtIndex: idx];
+		if (_buffers.count == 0)
+		{
+			_current = -1;
+			[_panes[from].container removeFromSuperview];
+		}
+		else
+		{
+			_current = -1;
+			[self activateBuffer: MIN(idx, (NSInteger)_buffers.count - 1)];
+		}
+	}
+
+	[self showPane: to];
+	[self loadPane: to];
+	NSInteger existing = [_buffers indexOfObject: b];
+	if (existing == NSNotFound)
+	{
+		[_buffers addObject: b];
+		existing = _buffers.count - 1;
+	}
+	b.caretPos = caret;
+	b.anchorPos = anchor;
+	b.firstVisibleLine = first;
+	_current = -1;
+	[self activateBuffer: existing];
+	[self refreshAllTabs];
+}
+
+// Synchronized vertical / horizontal scrolling (IDM_VIEW_SYNSCROLLV / H).
+- (void)setSyncScroll:(BOOL)vertical on:(BOOL)on
+{
+	(vertical ? _syncV : _syncH) = on;
+	for (int i = 0; i < 2; ++i)
+	{
+		_syncLine[i] = [_panes[i].editor message: SCI_GETFIRSTVISIBLELINE];
+		_syncX[i] = [_panes[i].editor message: SCI_GETXOFFSET];
+	}
+}
+
+- (BOOL)syncScroll:(BOOL)vertical
+{
+	return vertical ? _syncV : _syncH;
+}
+
+- (void)syncScrollFrom:(int)pane
+{
+	if ((!_syncV && !_syncH) || ![self paneVisible: 0] || ![self paneVisible: 1])
+		return;
+	ScintillaView* src = _panes[pane].editor;
+	ScintillaView* dst = _panes[1 - pane].editor;
+	if (_syncV)
+	{
+		long line = [src message: SCI_GETFIRSTVISIBLELINE];
+		long delta = line - _syncLine[pane];
+		if (delta)
+			[dst message: SCI_LINESCROLL wParam: 0 lParam: delta];
+	}
+	if (_syncH)
+	{
+		long x = [src message: SCI_GETXOFFSET];
+		long delta = x - _syncX[pane];
+		if (delta)
+			[dst message: SCI_SETXOFFSET wParam: [dst message: SCI_GETXOFFSET] + delta];
+	}
+	for (int i = 0; i < 2; ++i)
+	{
+		_syncLine[i] = [_panes[i].editor message: SCI_GETFIRSTVISIBLELINE];
+		_syncX[i] = [_panes[i].editor message: SCI_GETXOFFSET];
+	}
+}
+
+// Documents of both views, main view first, clones listed once.
+- (NSArray<NppBuffer*>*)allBuffers
+{
+	NSMutableArray* all = [_panes[0].buffers mutableCopy];
+	for (NppBuffer* b in _panes[1].buffers)
+		if (![all containsObject: b])
+			[all addObject: b];
+	return all;
+}
+
+// Makes `b` the current document, switching view if needed.
+- (BOOL)revealBuffer:(NppBuffer*)b
+{
+	if (![_buffers containsObject: b])
+		for (int i = 0; i < 2; ++i)
+			if ([self paneVisible: i] && [_panes[i].buffers containsObject: b])
+				[self switchToPane: i];
+	NSInteger idx = [_buffers indexOfObject: b];
+	if (idx == NSNotFound)
+		return NO;
+	[self activateBuffer: idx];
+	return YES;
+}
+
+// File > Close All: empties the sub view, then the main view.
+- (void)closeAllForced
+{
+	if ([self paneVisible: 1])
+	{
+		[self switchToPane: 1];
+		while (_activePane == 1 && _buffers.count)
+			[self closeBufferAtIndex: _buffers.count - 1 force: YES];
+	}
+	[self switchToPane: 0];
+	while (_buffers.count > 1)
+		[self closeBufferAtIndex: _buffers.count - 1 force: YES];
+	[self closeBufferAtIndex: 0 force: YES];
+}
+
+- (BOOL)otherViewVisible
+{
+	return [self paneVisible: 1 - _activePane];
+}
+
+- (NSArray<NppBuffer*>*)subViewBuffers
+{
+	return [self paneVisible: 1] ? _panes[1].buffers : @[];
+}
+
+- (int)activeView
+{
+	return _activePane;
+}
+
 #pragma mark - Styles
 
 // Theme switch / Style Configurator edit: restyle every view.
 - (void)stylesChanged:(NSNotification*)n
 {
-	NppBuffer* b = [self currentBuffer];
-	if (b)
-		[self applyLanguage: b];
+	[self forBothPanes: ^{
+		NppBuffer* b = [self currentBuffer];
+		if (b)
+			[self applyLanguage: b];
+	}];
 	if (_finder)
 		[_finder applyStyles];
 	[self refreshTabs];
@@ -1072,7 +1404,10 @@ static NSString* withThousands(long n)
 - (void)settingsChanged:(NSNotification*)n
 {
 	const NppSettings& s = NppSettings::instance();
-	[self applySettingsToEditor: _editor];
+	[self forBothPanes: ^{
+		[self applySettingsToEditor: self->_editor];
+		[self updateLineNumberMargin];
+	}];
 	_toolbar.iconSet = (NppToolbarIconSet)s._toolbarIconSet;
 	_toolbar.hidden = !s._toolbarShow;
 	_toolbarHeight.constant = s._toolbarShow ? _toolbar.preferredHeight : 0;
@@ -1115,7 +1450,7 @@ static NSString* withThousands(long n)
 		case IDM_EDIT_REDO: enabled = [_editor message: SCI_CANREDO]; break;
 		case IDM_FILE_SAVEALL:
 			enabled = NO;
-			for (NppBuffer* b in _buffers)
+			for (NppBuffer* b in [self allBuffers])
 				enabled |= b.dirty;
 			break;
 		default:
@@ -1256,7 +1591,7 @@ static NSString* withThousands(long n)
 
 - (void)forEachOpenDocument:(void (^)(ScintillaView*, NSString*, BOOL, BOOL*))block
 {
-	for (NppBuffer* b in [_buffers copy])
+	for (NppBuffer* b in [self allBuffers])
 	{
 		[self attachInvisible: b];
 		BOOL modified = NO;
@@ -1265,7 +1600,7 @@ static NSString* withThousands(long n)
 			b.dirty = [_invisible message: SCI_GETMODIFY] != 0;
 	}
 	[_invisible message: SCI_SETDOCPOINTER wParam: 0 lParam: 0];
-	[self refreshTabs];
+	[self refreshAllTabs];
 	[self updateTitle];
 }
 
@@ -1312,16 +1647,19 @@ static NSString* withThousands(long n)
 
 - (void)tabBar:(NppTabBar*)tabBar didSelectTabAtIndex:(NSInteger)index
 {
+	[self focusPaneOfTabBar: tabBar];
 	[self activateBuffer: index];
 }
 
 - (void)tabBar:(NppTabBar*)tabBar didRequestCloseTabAtIndex:(NSInteger)index
 {
+	[self focusPaneOfTabBar: tabBar];
 	[self closeBufferAtIndex: index force: NO];
 }
 
 - (void)tabBar:(NppTabBar*)tabBar didMoveTabFromIndex:(NSInteger)from toIndex:(NSInteger)to
 {
+	[self focusPaneOfTabBar: tabBar];
 	NppBuffer* cur = [self currentBuffer];
 	NppBuffer* moved = _buffers[from];
 	[_buffers removeObjectAtIndex: from];
@@ -1332,11 +1670,13 @@ static NSString* withThousands(long n)
 
 - (void)tabBarDidRequestNewTab:(NppTabBar*)tabBar
 {
+	[self focusPaneOfTabBar: tabBar];
 	[self newDocument];
 }
 
 - (NSMenu*)tabBar:(NppTabBar*)tabBar menuForTabAtIndex:(NSInteger)index
 {
+	[self focusPaneOfTabBar: tabBar];
 	static NSMenu* menu = nil;
 	if (!menu)
 		menu = [NppContextMenus tabContextMenu];
@@ -1345,6 +1685,7 @@ static NSString* withThousands(long n)
 
 - (void)tabBar:(NppTabBar*)tabBar didRequestPinTabAtIndex:(NSInteger)index
 {
+	[self focusPaneOfTabBar: tabBar];
 	[self activateBuffer: index];
 	[self togglePinCurrent];
 }

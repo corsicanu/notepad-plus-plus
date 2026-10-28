@@ -55,6 +55,23 @@ enum
 - (NSString*)selectedTextOrWord:(BOOL)expandToWord;
 
 - (void)saveCurrentViewState;
+
+// Main / sub view (Notepad++'s two edit views).
+- (void)sendCurrentToOtherView:(BOOL)clone;
+- (void)switchToPane:(int)i;
+- (BOOL)otherViewVisible;
+- (int)activeView;
+- (void)setSyncScroll:(BOOL)vertical on:(BOOL)on;
+- (BOOL)syncScroll:(BOOL)vertical;
+- (void)loadPane:(int)i;
+- (void)showPane:(int)i;
+- (BOOL)paneVisible:(int)i;
+- (NSArray<NppBuffer*>*)subViewBuffers;
+- (NSArray<NppBuffer*>*)allBuffers;
+- (BOOL)revealBuffer:(NppBuffer*)b;
+- (void)closeAllForced;
+- (void)refreshAllTabs;
+- (void)hidePane:(int)i;
 - (void)togglePinCurrent;
 - (void)setCurrentTabColor:(int)color;
 - (void)moveCurrentTabTo:(NSInteger)to;

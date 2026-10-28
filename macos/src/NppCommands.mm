@@ -304,19 +304,16 @@ namespace
 	t[IDM_FILE_SAVECOPYAS] = ^(NppMainWindow* w) { [w saveCopyOf: w.currentBuffer]; };
 	t[IDM_FILE_SAVEALL] = ^(NppMainWindow* w) {
 		NppBuffer* cur = w.currentBuffer;
-		for (NppBuffer* b in [w.buffers copy])
-			if (b.dirty && ![w saveBuffer: b as: NO])
+		for (NppBuffer* b in [w allBuffers])
+			if (b.dirty && (![w revealBuffer: b] || ![w saveBuffer: b as: NO]))
 				break;
-		[w activateBuffer: [w.buffers indexOfObject: cur]];
+		[w revealBuffer: cur];
 	};
 	t[IDM_FILE_RENAME] = ^(NppMainWindow* w) { [w renameCurrent]; };
 	t[IDM_FILE_CLOSE] = ^(NppMainWindow* w) { [w closeBufferAtIndex: w.currentIndex force: NO]; };
 	t[IDM_FILE_CLOSEALL] = ^(NppMainWindow* w) {
-		if (![w confirmCloseAll])
-			return;
-		while (w.buffers.count > 1)
-			[w closeBufferAtIndex: w.buffers.count - 1 force: YES];
-		[w closeBufferAtIndex: 0 force: YES];
+		if ([w confirmCloseAll])
+			[w closeAllForced];
 	};
 	auto closeWhere = [](NppMainWindow* w, BOOL (^keep)(NppBuffer* b, NSInteger idx)) {
 		NSMutableArray* toClose = [NSMutableArray array];
@@ -626,6 +623,14 @@ namespace
 		t[c] = ^(NppMainWindow* w) { [w setCurrentTabColor: c - IDM_VIEW_TAB_COLOUR_NONE - 1]; };
 	t[IDM_VIEW_GOTO_START] = ^(NppMainWindow* w) { [w moveCurrentTabTo: 0]; };
 	t[IDM_VIEW_GOTO_END] = ^(NppMainWindow* w) { [w moveCurrentTabTo: w.buffers.count]; };
+	t[IDM_VIEW_GOTO_ANOTHER_VIEW] = ^(NppMainWindow* w) { [w sendCurrentToOtherView: NO]; };
+	t[IDM_VIEW_CLONE_TO_ANOTHER_VIEW] = ^(NppMainWindow* w) { [w sendCurrentToOtherView: YES]; };
+	t[IDM_VIEW_SWITCHTO_OTHER_VIEW] = ^(NppMainWindow* w) {
+		if ([w otherViewVisible])
+			[w switchToPane: 1 - [w activeView]];
+	};
+	t[IDM_VIEW_SYNSCROLLV] = ^(NppMainWindow* w) { [w setSyncScroll: YES on: ![w syncScroll: YES]]; };
+	t[IDM_VIEW_SYNSCROLLH] = ^(NppMainWindow* w) { [w setSyncScroll: NO on: ![w syncScroll: NO]]; };
 	t[IDM_VIEW_TAB_MOVEFORWARD] = ^(NppMainWindow* w) { [w moveCurrentTab: 1]; };
 	t[IDM_VIEW_TAB_MOVEBACKWARD] = ^(NppMainWindow* w) { [w moveCurrentTab: -1]; };
 	t[IDM_VIEW_FULLSCREENTOGGLE] = ^(NppMainWindow* w) { [w.window toggleFullScreen: nil]; };
@@ -1019,6 +1024,9 @@ static int textCodepage(NppBuffer* b)
 		case IDM_VIEW_ALL_CHARACTERS: check(sci(e, SCI_GETVIEWEOL) && sci(e, SCI_GETVIEWWS) != SCWS_INVISIBLE); break;
 		case IDM_VIEW_INDENT_GUIDE: check(sci(e, SCI_GETINDENTATIONGUIDES) != SC_IV_NONE); break;
 		case IDM_VIEW_ALWAYSONTOP: check(self.window.level == NSFloatingWindowLevel); break;
+		case IDM_VIEW_SYNSCROLLV: check([self syncScroll: YES]); return [self otherViewVisible];
+		case IDM_VIEW_SYNSCROLLH: check([self syncScroll: NO]); return [self otherViewVisible];
+		case IDM_VIEW_SWITCHTO_OTHER_VIEW: return [self otherViewVisible];
 		case IDM_VIEW_FULLSCREENTOGGLE: check((self.window.styleMask & NSWindowStyleMaskFullScreen) != 0); break;
 		case IDM_EDIT_TOGGLEREADONLY: check(b.readOnly); break;
 		case IDM_EDIT_TOGGLESYSTEMREADONLY: check(b.fileReadOnly); return b.path != nil;
