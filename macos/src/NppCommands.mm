@@ -25,6 +25,10 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 + (void)registerPanelCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerHashCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerPrintCommands:(std::unordered_map<int, NppCommandHandler>&)t;
++ (void)registerUserLangCommands:(std::unordered_map<int, NppCommandHandler>&)t;
++ (BOOL)isUserLangCommand:(int)cmd;
+- (void)runUserLangCommand:(int)cmd;
+- (BOOL)validateUserLangCommand:(NSMenuItem*)item;
 - (BOOL)isPanelShown:(int)cmd;
 + (BOOL)isShortcutsXmlCommand:(int)cmd;
 - (void)runShortcutsXmlCommand:(int)cmd;
@@ -666,6 +670,7 @@ namespace
 		if (!LangManager::instance().languageByType(lt))
 			continue;
 		t[id] = ^(NppMainWindow* w) {
+			w.currentBuffer.userLangName = nil;
 			w.currentBuffer.lang = LangManager::instance().languageByType(lt);
 			[w applyLanguage: w.currentBuffer];
 		};
@@ -708,6 +713,7 @@ namespace
 	[NppMainWindow registerPanelCommands: t];
 	[NppMainWindow registerHashCommands: t];
 	[NppMainWindow registerPrintCommands: t];
+	[NppMainWindow registerUserLangCommands: t];
 
 	return t;
 }
@@ -725,6 +731,11 @@ namespace
 	if ([NppMainWindow isShortcutsXmlCommand: cmd])
 	{
 		[self runShortcutsXmlCommand: cmd];
+		return YES;
+	}
+	if ([NppMainWindow isUserLangCommand: cmd])
+	{
+		[self recordCommand: cmd run: ^{ [self runUserLangCommand: cmd]; }];
 		return YES;
 	}
 	return NO;
@@ -1033,6 +1044,8 @@ static int textCodepage(NppBuffer* b)
 	int cmd = (int)item.tag;
 	if ([NppMainWindow isShortcutsXmlCommand: cmd])
 		return YES;
+	if ([NppMainWindow isUserLangCommand: cmd])
+		return [self validateUserLangCommand: item];
 	const auto& table = [NppMainWindow commandTable];
 	if (table.find(cmd) == table.end())
 		return NO;
@@ -1093,7 +1106,7 @@ static int textCodepage(NppBuffer* b)
 			if (cmd >= IDM_FORMAT_ENCODE && cmd <= IDM_FORMAT_ENCODE_END)
 				check(b.encoding != -1 && EncodingMapper::getInstance().getIndexFromEncoding(b.encoding) == cmd - IDM_FORMAT_ENCODE);
 			else if (cmd >= IDM_LANG && cmd < IDM_LANG + 200)
-				check(LangManager::instance().langTypeOf(b.lang) == Notepad_plus::menuID2LangType(cmd));
+				check(!b.userLangName && LangManager::instance().langTypeOf(b.lang) == Notepad_plus::menuID2LangType(cmd));
 			break;
 	}
 	return YES;

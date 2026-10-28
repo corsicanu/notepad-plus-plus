@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "NppUpstream.h"   // LANG_INDEX_*, FONTSTYLE_*
+#include "NppXml.h"
 
 #import "ScintillaView.h"
 
@@ -87,9 +88,14 @@ public:
 	// Sets lexer, keyword lists, styles and folding properties.
 	void apply(ScintillaView* view, const NppLang* lang) const;
 
-private:
 	void applyGlobalStyles(ScintillaView* view) const;
 	void applyStyle(ScintillaView* view, const NppStyle& s) const;
+
+	// <WordsStyle> attributes (styleID, fgColor, bgColor, colorStyle, font...).
+	static NppStyle styleFromXml(const pugi::xml_node& n);
+	static void styleToXml(pugi::xml_node n, const NppStyle& s);
+
+private:
 	std::string keywordList(const NppLang* lang, int kwClass, const std::string& lexerStylerName) const;
 
 	std::vector<NppLang> _langs;

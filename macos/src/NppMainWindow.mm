@@ -418,7 +418,7 @@ namespace
 	b.path = isPath ? file : nil;
 	if (!isPath)
 		b.untitledName = file;
-	b.lang = LangManager::instance().languageForPath(file.fileSystemRepresentation);
+	[b detectLanguageFromPath: file];
 	if (isPath && [NSFileManager.defaultManager fileExistsAtPath: file])
 		[b updateTimestamp];
 	else
@@ -440,7 +440,7 @@ namespace
 
 - (void)applyLanguage:(NppBuffer*)b
 {
-	LangManager::instance().apply(_editor, b.lang);
+	[b applyLanguageTo: _editor];
 	[self updateLineNumberMargin];
 	[self updateStatusBar];
 }
@@ -459,7 +459,7 @@ namespace
 	[_editor message: SCI_SETCODEPAGE wParam: SC_CP_UTF8];
 	[_editor message: SCI_SETEOLMODE wParam: b.eol];
 	[_editor message: SCI_SETREADONLY wParam: b.readOnly];
-	LangManager::instance().apply(_editor, b.lang);
+	[b applyLanguageTo: _editor];
 	[_editor message: SCI_SETWRAPMODE wParam: _wordWrap ? SC_WRAP_WORD : SC_WRAP_NONE];
 
 	[_editor message: SCI_SETSEL wParam: b.anchorPos lParam: b.caretPos];
@@ -673,9 +673,9 @@ namespace
 		[[NSAlert alertWithError: error] runModal];
 		return NO;
 	}
-	if (saveAs || !b.lang || b.lang->name == "normal")
+	if (saveAs || (!b.userLangName && (!b.lang || b.lang->name == "normal")))
 	{
-		b.lang = LangManager::instance().languageForPath(path.fileSystemRepresentation);
+		[b detectLanguageFromPath: path];
 		[self applyLanguage: b];
 	}
 	[NppMainWindow addRecentFile: path];
@@ -771,7 +771,7 @@ namespace
 			return;
 		}
 		b.path = newPath;
-		b.lang = LangManager::instance().languageForPath(newPath.fileSystemRepresentation);
+		[b detectLanguageFromPath: newPath];
 		[self applyLanguage: b];
 	}
 	[self refreshTabs];
@@ -891,7 +891,9 @@ static NSString* withThousands(long n)
 	ScintillaView* e = _editor;
 
 	NSString* lang = @"Normal text file";
-	if (b.lang && b.lang->name != "normal")
+	if (b.userLangName)
+		lang = [@"User Defined language file - " stringByAppendingString: b.userLangName];
+	else if (b.lang && b.lang->name != "normal")
 		lang = [NSString stringWithFormat: @"%s file", b.lang->displayName.c_str()];
 	_statusLang.stringValue = lang;
 

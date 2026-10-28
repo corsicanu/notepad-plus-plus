@@ -3,6 +3,8 @@
 #include "NppUpstream.h"
 #include "NppSettings.h"
 #include "EncodingMapper.h"
+#include "LangManager.h"
+#include "NppUdl.h"
 #include "uchardet.h"
 
 namespace
@@ -287,9 +289,32 @@ namespace
 	_path = [path copy];
 	_dirty = NO;
 	_fileReadOnly = ![NSFileManager.defaultManager isWritableFileAtPath: path];
-	_lang = LangManager::instance().languageForPath(path.fileSystemRepresentation);
+	[self detectLanguageFromPath: path];
 	[self updateTimestamp];
 	return YES;
+}
+
+- (void)detectLanguageFromPath:(NSString*)path
+{
+	if (NppUserLang* ul = NppUdlManager::instance().forPath(path.fileSystemRepresentation))
+	{
+		_lang = nullptr;
+		_userLangName = @(ul->name.c_str());
+		return;
+	}
+	_userLangName = nil;
+	_lang = LangManager::instance().languageForPath(path.fileSystemRepresentation);
+}
+
+- (void)applyLanguageTo:(ScintillaView*)view
+{
+	if (_userLangName)
+		if (NppUserLang* ul = NppUdlManager::instance().byName(_userLangName.UTF8String))
+		{
+			nppApplyUserLang(view, *ul, (__bridge const void*)self);
+			return;
+		}
+	LangManager::instance().apply(view, _lang);
 }
 
 - (NSData*)bytesForSavingFrom:(ScintillaView*)editor

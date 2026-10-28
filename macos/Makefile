@@ -93,13 +93,13 @@ $(OBJ)/lex/%.cxx.o: $(LEX)/%.cxx
 # Tables lifted from upstream sources (see tools/gen_upstream.sh).
 GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc \
             $(GEN)/ToolbarIcons.inc $(GEN)/TabContextMenu.inc $(GEN)/PrefPages.inc $(GEN)/MenuFolderPositions.inc \
-            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc $(GEN)/AutoCompletionImages.inc $(GEN)/AsciiListView.inc $(GEN)/LangNameInfo.inc
+            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc $(GEN)/AutoCompletionImages.inc $(GEN)/AsciiListView.inc $(GEN)/LangNameInfo.inc $(GEN)/GlobalMappers.inc
 $(GEN_INC): $(GEN)/.stamp
 $(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp $(NPP)/src/NppNotification.cpp \
              $(NPP)/src/WinControls/Preference/preferenceDlg.cpp $(NPP)/src/localization.cpp \
              $(NPP)/src/NppCommands.cpp $(NPP)/src/WinControls/shortcut/shortcut.cpp \
              $(NPP)/src/ScintillaComponent/AutoCompletion.cpp $(NPP)/src/WinControls/AnsiCharPanel/asciiListView.cpp \
-             $(NPP)/src/ScintillaComponent/ScintillaEditView.cpp
+             $(NPP)/src/ScintillaComponent/ScintillaEditView.cpp $(NPP)/src/ScintillaComponent/UserDefineDialog.h
 	@echo "  GEN   upstream tables"
 	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
 	@touch $@
@@ -153,6 +153,7 @@ resources: $(EXE)
 	@cp $(NPP)/installer/themes/*.xml $(RES)/themes/ 2>/dev/null || true
 	@cp $(NPP)/installer/nativeLang/*.xml $(RES)/localization/ 2>/dev/null || true
 	@rsync -a --delete $(NPP)/installer/functionList/ $(RES)/functionList/
+	@rsync -a --delete $(NPP)/bin/userDefineLangs/ $(RES)/userDefineLangs/
 	@mkdir -p $(RES)/autoCompletion
 	@cp $(NPP)/installer/APIs/*.xml $(RES)/autoCompletion/
 	@for n in info_bar_bg mac_cursor_busy mac_cursor_flipped; do \

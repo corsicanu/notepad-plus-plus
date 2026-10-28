@@ -20,6 +20,12 @@ typedef NS_ENUM(NSInteger, NppEOL) {
 @property (nonatomic, copy) NSString* untitledName;     // "new 1"
 @property (nonatomic, readonly) NSString* displayName;
 @property (nonatomic) const NppLang* lang;
+// A User Defined Language, when the document uses one (lang is then nil).
+@property (nonatomic, copy) NSString* userLangName;
+// languageForPath, user languages first (Buffer::setFileName).
+- (void)detectLanguageFromPath:(NSString*)path;
+// The document's lexer, keywords and styles on a view.
+- (void)applyLanguageTo:(ScintillaView*)view;
 @property (nonatomic) int unicodeMode;                  // UniMode (NppConstants.h)
 @property (nonatomic) int encoding;                     // Windows codepage, -1 when unicodeMode decides
 @property (nonatomic) NppEOL eol;

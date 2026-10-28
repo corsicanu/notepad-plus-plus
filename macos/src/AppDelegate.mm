@@ -12,6 +12,7 @@
 
 @interface NppMainWindow (MacroMenus)
 + (void)installShortcutsXmlItemsIn:(NSMenu*)bar;
++ (void)installUserLangItemsIn:(NSMenu*)bar;
 - (void)restoreDockingState;
 - (void)captureDockingState;
 - (BOOL)confirmCloseProjectPanels;
@@ -21,6 +22,7 @@
 #include "LangManager.h"
 #include "NppConfig.h"
 #include "NppShortcuts.h"
+#include "NppUdl.h"
 #include "NppSettings.h"
 #include "NppUpstream.h"
 
@@ -120,6 +122,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	[NppMenuBuilder applyDefaultShortcuts: bar];
 	[NppLocalization applyToMainMenu: bar topOffset: 1];
 	[NppMainWindow installShortcutsXmlItemsIn: bar];
+	[NppMainWindow installUserLangItemsIn: bar];
 	[NppShortcutMapper applyMenuShortcuts: bar];
 	NSApp.mainMenu = bar;
 	// After the bar is installed, so AppKit doesn't add its own "Window" menu
@@ -173,6 +176,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 {
 	NppConfig::instance().load();
 	NppShortcuts::instance().load();
+	NppUdlManager::instance().load();
 	LangManager::instance().load(NSBundle.mainBundle.resourcePath.fileSystemRepresentation);
 	[NppLocalization loadLanguage];
 	[self buildMenus];

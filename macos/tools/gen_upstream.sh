@@ -75,6 +75,10 @@ mv "$OUT/AsciiListView.inc.tmp" "$OUT/AsciiListView.inc"
 awk '/^LanguageNameInfo ScintillaEditView::_langNameInfoArray/{m=1; next} m&&/^};/{exit} m&&/^[[:space:]]*\{/' "$SRC/ScintillaComponent/ScintillaEditView.cpp" > "$OUT/LangNameInfo.inc.tmp"
 mv "$OUT/LangNameInfo.inc.tmp" "$OUT/LangNameInfo.inc"
 
-for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys AutoCompletionImages AsciiListView LangNameInfo; do
+# 14. UDL keyword / style name tables (UserDefineDialog.h: class GlobalMappers).
+awk '/^class GlobalMappers/{m=1} m{print} m&&/^};/{exit}' "$SRC/ScintillaComponent/UserDefineDialog.h" > "$OUT/GlobalMappers.inc.tmp"
+mv "$OUT/GlobalMappers.inc.tmp" "$OUT/GlobalMappers.inc"
+
+for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys AutoCompletionImages AsciiListView LangNameInfo GlobalMappers; do
 	[ -s "$OUT/$f.inc" ] || { echo "gen_upstream: $f.inc is empty, upstream layout changed" >&2; exit 1; }
 done

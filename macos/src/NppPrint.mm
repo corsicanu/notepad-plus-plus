@@ -75,7 +75,7 @@ namespace
 		_view = [[ScintillaView alloc] initWithFrame: NSMakeRect(0, 0, 800, 600)];
 		sci(_view, SCI_SETDOCPOINTER, 0, sci(e, SCI_GETDOCPOINTER));
 		sci(_view, SCI_SETCODEPAGE, SC_CP_UTF8);
-		LangManager::instance().apply(_view, window.currentBuffer.lang);
+		[window.currentBuffer applyLanguageTo: _view];
 		for (int m = 0; m < 5; ++m)
 		{
 			sci(_view, SCI_SETMARGINTYPEN, m, sci(e, SCI_GETMARGINTYPEN, m));

@@ -577,6 +577,16 @@ std::string LangManager::keywordList(const NppLang* lang, int kwClass, const std
 	return user.empty() ? def : user + " " + def;
 }
 
+NppStyle LangManager::styleFromXml(const pugi::xml_node& n)
+{
+	return parseStyle(n);
+}
+
+void LangManager::styleToXml(pugi::xml_node n, const NppStyle& s)
+{
+	writeStyle(n, s);
+}
+
 void LangManager::apply(ScintillaView* view, const NppLang* lang) const
 {
 	const std::string lexerName = lang ? lang->lexer : "null";

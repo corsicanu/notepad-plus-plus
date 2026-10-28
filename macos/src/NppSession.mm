@@ -7,6 +7,7 @@
 #import "NppMainWindowInternal.h"
 
 #include "LangManager.h"
+#include "NppUdl.h"
 #include "NppConfig.h"
 #include "NppSettings.h"
 #include "NppUpstream.h"
@@ -177,7 +178,7 @@
 		SessionFileInfo fi;
 		fi.fileName = (b.path ?: b.displayName).UTF8String;
 		fi.backupFilePath = withBackups && b.backupPath ? b.backupPath.UTF8String : "";
-		fi.langName = b.lang ? b.lang->displayName : "Normal text";
+		fi.langName = b.userLangName ? b.userLangName.UTF8String : (b.lang ? b.lang->displayName : "Normal text");
 		fi.encoding = b.encoding;
 		fi.firstVisibleLine = b.firstVisibleLine;
 		fi.startPos = b.anchorPos;
@@ -279,7 +280,15 @@
 		if (!b)
 			continue;
 		if (const NppLang* lang = [self languageNamed: fi.langName])
+		{
 			b.lang = lang;
+			b.userLangName = nil;
+		}
+		else if (NppUdlManager::instance().byName(fi.langName))
+		{
+			b.lang = nullptr;
+			b.userLangName = @(fi.langName.c_str());
+		}
 		b.readOnly = fi.userReadOnly;
 		b.tabColor = fi.tabColour;
 		b.pinned = fi.tabPinned;

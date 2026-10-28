@@ -150,7 +150,7 @@ namespace
 	if (sci(_map, SCI_GETDOCPOINTER) != doc)
 		sci(_map, SCI_SETDOCPOINTER, 0, doc);
 	sci(_map, SCI_SETCODEPAGE, SC_CP_UTF8);
-	LangManager::instance().apply(_map, _window.currentBuffer.lang);
+	[_window.currentBuffer applyLanguageTo: _map];
 	for (int m = 0; m < 5; ++m)
 		sci(_map, SCI_SETMARGINWIDTHN, m, 0);
 	sci(_map, SCI_SETZOOM, static_cast<uptr_t>(-10));
