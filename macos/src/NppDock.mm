@@ -218,6 +218,35 @@
 	return [_visible[0] arrayByAddingObjectsFromArray: _visible[1]];
 }
 
+- (NSArray<NSNumber*>*)allCommands
+{
+	return [_panels.allKeys sortedArrayUsingSelector: @selector(compare:)];
+}
+
+- (NppDockSide)sideOfCommand:(int)cmd
+{
+	return (NppDockSide)_sideOf[@(cmd)].integerValue;
+}
+
+- (CGFloat)widthOfSide:(NppDockSide)side
+{
+	NppDockContainer* c = _sides[side];
+	if (c.superview == _container && c.frame.size.width > 20)
+		_width[side] = c.frame.size.width;
+	return _width[side];
+}
+
+- (void)setWidth:(CGFloat)width ofSide:(NppDockSide)side
+{
+	if (width > 20)
+		_width[side] = width;
+}
+
+- (NSInteger)selectedIndexOfSide:(NppDockSide)side
+{
+	return _visible[side].count ? _selected[side] : -1;
+}
+
 - (void)closeSelectedOnSide:(int)s
 {
 	if (_selected[s] >= 0 && _selected[s] < (NSInteger)_visible[s].count)

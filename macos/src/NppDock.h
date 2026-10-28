@@ -35,5 +35,10 @@ typedef NS_ENUM(NSInteger, NppDockSide) {
 
 // Commands of the panels currently shown (for config.xml).
 - (NSArray<NSNumber*>*)visibleCommands;
+- (NSArray<NSNumber*>*)allCommands;
+- (NppDockSide)sideOfCommand:(int)cmd;
+- (CGFloat)widthOfSide:(NppDockSide)side;
+- (void)setWidth:(CGFloat)width ofSide:(NppDockSide)side;
+- (NSInteger)selectedIndexOfSide:(NppDockSide)side;     // -1 when the side is empty
 
 @end

@@ -11,6 +11,8 @@
 
 @interface NppMainWindow (MacroMenus)
 + (void)installShortcutsXmlItemsIn:(NSMenu*)bar;
+- (void)restoreDockingState;
+- (void)captureDockingState;
 @end
 
 #include "LangManager.h"
@@ -228,6 +230,8 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 		[_main loadSessionFromPath: [NSString stringWithUTF8String: NppConfig::instance().sessionPath().c_str()]];
 	if (paths.count)
 		[_main openPaths: paths];
+	if (![args containsObject: @"-nosession"] && !snapshot && !dumpMenus)
+		[(id)_main restoreDockingState];
 	for (id c in commands)
 	{
 		if ([c isKindOfClass: NSNumber.class])
@@ -340,6 +344,9 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	if (s._rememberLastSession && !_noSession)
 		[_main saveSessionToPath: [NSString stringWithUTF8String: NppConfig::instance().sessionPath().c_str()] withBackups: snapshot];
 	[_main captureEditorSettings];
+	// Test runs leave the user's panel layout alone.
+	if (!_noSession)
+		[(id)_main captureDockingState];
 	NppConfig::instance().save();
 	return NSTerminateNow;
 }

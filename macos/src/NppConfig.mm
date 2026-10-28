@@ -214,6 +214,27 @@ void NppConfig::load()
 				s._matchedPairs.emplace_back(static_cast<char>(open), static_cast<char>(close));
 		}
 	}
+	if (pugi::xml_node n = gui("DockingManager", false))
+	{
+		dockLeftWidth = getInt(n, "leftWidth", dockLeftWidth);
+		dockRightWidth = getInt(n, "rightWidth", dockRightWidth);
+		dockTopHeight = getInt(n, "topHeight", dockTopHeight);
+		dockBottomHeight = getInt(n, "bottomHeight", dockBottomHeight);
+		dockPanels.clear();
+		for (pugi::xml_node p = n.child("PluginDlg"); p; p = p.next_sibling("PluginDlg"))
+		{
+			DockPanelInfo d;
+			d.name = p.attribute("pluginName").as_string("");
+			d.id = p.attribute("id").as_int(0);
+			d.curr = p.attribute("curr").as_int(0);
+			d.prev = p.attribute("prev").as_int(-1);
+			d.visible = getBool(p, "isVisible", false);
+			dockPanels.push_back(d);
+		}
+		dockActiveTabs.clear();
+		for (pugi::xml_node t = n.child("ActiveTabs"); t; t = t.next_sibling("ActiveTabs"))
+			dockActiveTabs.emplace_back(t.attribute("cont").as_int(0), t.attribute("activeTab").as_int(-1));
+	}
 	if (pugi::xml_node n = gui("shortcutsXmlHMAC", false))
 		shortcutsXmlHmac = n.attribute("value").as_string("");
 	if (pugi::xml_node n = gui("AppPosition", false))
@@ -431,6 +452,33 @@ void NppConfig::save()
 			pugi::xml_node p = ai.append_child("UserDefinePair");
 			p.append_attribute("open") = static_cast<int>(open);
 			p.append_attribute("close") = static_cast<int>(close);
+		}
+	}
+	{
+		// FloatingWindow nodes are kept; PluginDlg / ActiveTabs are rewritten.
+		pugi::xml_node dm = gui("DockingManager", true);
+		setAttr(dm, "leftWidth", dockLeftWidth);
+		setAttr(dm, "rightWidth", dockRightWidth);
+		setAttr(dm, "topHeight", dockTopHeight);
+		setAttr(dm, "bottomHeight", dockBottomHeight);
+		while (pugi::xml_node p = dm.child("PluginDlg"))
+			dm.remove_child(p);
+		while (pugi::xml_node t = dm.child("ActiveTabs"))
+			dm.remove_child(t);
+		for (const auto& d : dockPanels)
+		{
+			pugi::xml_node p = dm.append_child("PluginDlg");
+			p.append_attribute("pluginName") = d.name.c_str();
+			p.append_attribute("id") = d.id;
+			p.append_attribute("curr") = d.curr;
+			p.append_attribute("prev") = d.prev;
+			p.append_attribute("isVisible") = d.visible ? "yes" : "no";
+		}
+		for (const auto& [cont, tab] : dockActiveTabs)
+		{
+			pugi::xml_node t = dm.append_child("ActiveTabs");
+			t.append_attribute("cont") = cont;
+			t.append_attribute("activeTab") = tab;
 		}
 	}
 	if (!shortcutsXmlHmac.empty())

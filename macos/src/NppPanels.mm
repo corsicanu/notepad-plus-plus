@@ -7,6 +7,7 @@
 #import "NppWorkspacePanels.h"
 
 #include "NppAsciiTable.h"
+#include "NppConfig.h"
 #include "NppSettings.h"
 #include "NppUpstream.h"
 
@@ -482,6 +483,10 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 		case IDM_VIEW_DOC_MAP: p = [[NppDocumentMapPanel alloc] initWithWindow: self]; break;
 		default: return nil;
 	}
+	// The side the user left it on (DockingManager curr: 0 left, 1 right).
+	for (const auto& d : NppConfig::instance().dockPanels)
+		if (d.name == "Notepad++::InternalFunction" && d.id == cmd && (d.curr == 0 || d.curr == 1))
+			side = d.curr == 0 ? NppDockLeft : NppDockRight;
 	[dock addPanel: p forCommand: cmd side: side];
 	return p;
 }
@@ -503,6 +508,53 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 	if ([v isKindOfClass: NSScrollView.class])
 		v = ((NSScrollView*)v).documentView;
 	[self.window makeFirstResponder: v];
+}
+
+// Notepad_plus::loadDockingParams: internal panels left visible come back.
+- (void)restoreDockingState
+{
+	NppConfig& c = NppConfig::instance();
+	[self.dock setWidth: c.dockLeftWidth ofSide: NppDockLeft];
+	[self.dock setWidth: c.dockRightWidth ofSide: NppDockRight];
+	for (const auto& d : c.dockPanels)
+		if (d.name == "Notepad++::InternalFunction" && d.visible && [self panelForCommand: d.id])
+			[self.dock showPanel: d.id];
+	// Re-select each side's active tab.
+	for (const auto& [cont, tab] : c.dockActiveTabs)
+	{
+		if ((cont != 0 && cont != 1) || tab < 0)
+			continue;
+		int n = 0;
+		for (NSNumber* cmd in self.dock.visibleCommands)
+			if ([self.dock sideOfCommand: cmd.intValue] == (cont == 0 ? NppDockLeft : NppDockRight) && n++ == tab)
+				[self.dock showPanel: cmd.intValue];
+	}
+}
+
+- (void)captureDockingState
+{
+	NppConfig& c = NppConfig::instance();
+	NppDockManager* dock = self.dock;
+	c.dockLeftWidth = (int)[dock widthOfSide: NppDockLeft];
+	c.dockRightWidth = (int)[dock widthOfSide: NppDockRight];
+	for (NSNumber* n in dock.allCommands)
+	{
+		int cmd = n.intValue;
+		NppConfig::DockPanelInfo* info = nullptr;
+		for (auto& d : c.dockPanels)
+			if (d.name == "Notepad++::InternalFunction" && d.id == cmd)
+				info = &d;
+		if (!info)
+		{
+			c.dockPanels.push_back({"Notepad++::InternalFunction", cmd, 0, -1, false});
+			info = &c.dockPanels.back();
+		}
+		info->curr = [dock sideOfCommand: cmd] == NppDockLeft ? 0 : 1;
+		info->visible = [dock isPanelVisible: cmd];
+	}
+	c.dockActiveTabs.clear();
+	for (int cont = 0; cont < 4; ++cont)
+		c.dockActiveTabs.emplace_back(cont, cont < 2 ? (int)[dock selectedIndexOfSide: (NppDockSide)cont] : -1);
 }
 
 - (BOOL)isPanelShown:(int)cmd

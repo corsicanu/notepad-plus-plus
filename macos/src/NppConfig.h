@@ -57,6 +57,13 @@ public:
 	bool appMaximized = false;
 	bool appPositionValid = false;
 
+	// Docking panels (<GUIConfig name="DockingManager">): PluginDlg entries,
+	// internal panels under "Notepad++::InternalFunction", plugins kept as read.
+	struct DockPanelInfo { std::string name; int id = 0; int curr = 0; int prev = -1; bool visible = false; };
+	int dockLeftWidth = 200, dockRightWidth = 200, dockTopHeight = 200, dockBottomHeight = 200;
+	std::vector<DockPanelInfo> dockPanels;
+	std::vector<std::pair<int, int>> dockActiveTabs;   // (cont, activeTab)
+
 	// Folder as Workspace (<FileBrowser latestSelectedItem=""><root foldername=""/>).
 	std::vector<std::string> fileBrowserRoots;
 	std::string fileBrowserSelectedItem;
