@@ -5,6 +5,7 @@
 #import "NppMainWindowInternal.h"
 #import "NppFindCharsInRange.h"
 #import "NppStyleConfigurator.h"
+#import "NppPreferences.h"
 
 #include "LangManager.h"
 #include "NppSettings.h"
@@ -650,6 +651,7 @@ namespace
 	}
 
 	// ---- Settings ----
+	t[IDM_SETTING_PREFERENCE] = ^(NppMainWindow*) { [[NppPreferences shared] show]; };
 	t[IDM_LANGSTYLE_CONFIG_DLG] = ^(NppMainWindow*) { [[NppStyleConfigurator shared] show]; };
 
 	// ---- ? ----

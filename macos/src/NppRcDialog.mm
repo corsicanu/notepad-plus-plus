@@ -448,6 +448,7 @@ namespace
 	NSString* _caption;
 	BOOL _modal;
 	NSMutableDictionary<NSNumber*, NppRcTableSource*>* _tableSources;
+	int _groupCounter;   // WS_GROUP numbering, unique across all views built for this owner
 }
 
 + (int)symbolValue:(NSString*)name
@@ -500,7 +501,7 @@ namespace
 
 	NppRcFlippedView* root = [[NppRcFlippedView alloc] initWithFrame: NSMakeRect(0, 0, dlg.w * kDluX, dlg.h * kDluY)];
 	NSFont* font = [NSFont systemFontOfSize: 12];
-	int group = 0;
+	int group = owner->_groupCounter;
 
 	for (const RcControl& c : dlg.controls)
 	{
@@ -738,6 +739,7 @@ namespace
 		if (cid > 0 && !owner->_items[@(cid)])
 			owner->_items[@(cid)] = view;
 	}
+	owner->_groupCounter = group + 1;
 	return root;
 }
 

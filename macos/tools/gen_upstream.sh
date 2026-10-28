@@ -40,6 +40,20 @@ awk '/else \/\/ default tab context menu/{m=1} m&&/_tabPopupMenu\.create/{exit} 
 	| sed -E 's/.*MenuItemUnit\((.*)\)\);.*/\t{\1},/' > "$OUT/TabContextMenu.inc.tmp"
 mv "$OUT/TabContextMenu.inc.tmp" "$OUT/TabContextMenu.inc"
 
-for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu; do
+# 7. Preferences pages (preferenceDlg.cpp): title, localization key, dialog resource.
+PREF="$SRC/WinControls/Preference/preferenceDlg.cpp"
+grep -E '_wVector\.push_back\(DlgInfo\(&' "$PREF" | sed -E 's/.*DlgInfo\(&([A-Za-z0-9_]+), L"([^"]*)", L"([^"]*)".*/\1 \2|\3/' | while read -r var rest; do
+	title=${rest%%|*}
+	key=${rest#*|}
+	idd=$(grep -E "$var\.create\(IDD_" "$PREF" | sed -E 's/.*create\((IDD_[A-Z0-9_]+).*/\1/' | head -1)
+	printf '\t{"%s", "%s", "%s"},\n' "$title" "$key" "$idd"
+done > "$OUT/PrefPages.inc.tmp"
+mv "$OUT/PrefPages.inc.tmp" "$OUT/PrefPages.inc"
+
+# 8. Menu folder positions for localization (localization.cpp: g_menuFolderPositions[]).
+awk '/static constexpr MenuPosition g_menuFolderPositions\[\]/{m=1; next} m&&/^};/{exit} m&&/^[[:space:]]*\{/' "$SRC/localization.cpp" > "$OUT/MenuFolderPositions.inc.tmp"
+mv "$OUT/MenuFolderPositions.inc.tmp" "$OUT/MenuFolderPositions.inc"
+
+for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions; do
 	[ -s "$OUT/$f.inc" ] || { echo "gen_upstream: $f.inc is empty, upstream layout changed" >&2; exit 1; }
 done

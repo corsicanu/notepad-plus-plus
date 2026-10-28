@@ -5,6 +5,7 @@
 #include "NppUpstream.h"
 #include "NppXml.h"
 #include "LangManager.h"
+#include "NppSettingsRegistry.h"
 
 #include <algorithm>
 #include <cstring>
@@ -314,6 +315,31 @@ void NppConfig::load()
 		std::string t = text(n);
 		s._toolbarIconSet = t == "large" ? 1 : t == "small2" ? 2 : t == "large2" ? 3 : t == "standard" ? 4 : 0;
 	}
+	// Registry-described settings.
+	for (const auto& e : nppSettingsRegistry())
+	{
+		pugi::xml_node n = gui(e.gui, false);
+		if (!n || !e.field)
+			continue;
+		using K = NppSettingEntry::Kind;
+		switch (e.kind)
+		{
+			case K::Bool: *(bool*)e.field = getBool(n, e.attr, *(bool*)e.field); break;
+			case K::BoolShow: *(bool*)e.field = getBool(n, e.attr, *(bool*)e.field); break;
+			case K::Int: *(int*)e.field = getInt(n, e.attr, *(int*)e.field); break;
+			case K::Str: *(std::string*)e.field = n.attribute(e.attr).as_string(((std::string*)e.field)->c_str()); break;
+			case K::TextBool: *(bool*)e.field = text(n) == "yes"; break;
+			case K::TextShow: *(bool*)e.field = text(n) == "show"; break;
+			case K::TextStr: *(std::string*)e.field = text(n); break;
+		}
+	}
+	if (pugi::xml_node n = gui("MenuBar", false))
+		s._menuBarHide = text(n) == "hide";
+	if (pugi::xml_node n = gui("MaintainIndent", false))
+		s._maintainIndent = atoi(text(n).c_str());
+	if (pugi::xml_node n = gui("URL", false))
+		s._urlMode = atoi(text(n).c_str());
+
 	if (pugi::xml_node n = gui("TabBar", false))
 	{
 		s._tabDragAndDrop = getBool(n, "dragAndDrop", s._tabDragAndDrop);
@@ -461,6 +487,27 @@ void NppConfig::save()
 	setBool(n, "bold", go.enableBold);
 	setBool(n, "italic", go.enableItalic);
 	setBool(n, "underline", go.enableUnderLine);
+
+	for (const auto& e : nppSettingsRegistry())
+	{
+		if (!e.field)
+			continue;
+		n = gui(e.gui, true);
+		using K = NppSettingEntry::Kind;
+		switch (e.kind)
+		{
+			case K::Bool: setBool(n, e.attr, *(bool*)e.field); break;
+			case K::BoolShow: setBool(n, e.attr, *(bool*)e.field, "show", "hide"); break;
+			case K::Int: setAttr(n, e.attr, *(int*)e.field); break;
+			case K::Str: setAttr(n, e.attr, ((std::string*)e.field)->c_str()); break;
+			case K::TextBool: setText(n, *(bool*)e.field ? "yes" : "no"); break;
+			case K::TextShow: setText(n, *(bool*)e.field ? "show" : "hide"); break;
+			case K::TextStr: setText(n, ((std::string*)e.field)->c_str()); break;
+		}
+	}
+	setText(gui("MenuBar", true), s._menuBarHide ? "hide" : "show");
+	setText(gui("MaintainIndent", true), std::to_string(s._maintainIndent).c_str());
+	setText(gui("URL", true), std::to_string(s._urlMode).c_str());
 
 	n = gui("ToolBar", true);
 	setBool(n, "visible", s._toolbarShow);

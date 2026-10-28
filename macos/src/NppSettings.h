@@ -112,6 +112,90 @@ struct NppSettings
 	int _transparencyMode = 1; // 0 none, 1 on losing focus, 2 always
 	int _transparency = 150;
 
+	// ---- Preferences pages (bound in NppPreferences.mm, stored via NppSettingsRegistry) ----
+	bool _menuBarHide = false;
+	bool _hideMenuRightShortcuts = false;
+	int _toolbarColor = -1;
+	bool _tabVertical = false;
+	bool _tabMultiLine = false;
+	bool _tabAltIcons = false;
+	bool _tabShowOnlyPinnedButton = false;
+	bool _tabButtonsOnInactive = false;
+	int _tabCompactLabelLen = 0;
+	bool _smoothFont = false;
+	bool _foldCmdToggable = false;
+	bool _rightClickKeepsSelection = false;
+	bool _selectedTextFgSingleColor = false;
+	bool _disableAdvancedScrolling = false;
+	bool _disableSelectedTextDragDrop = false;
+	bool _columnSel2MultiEdit = true;
+	int _borderWidth = 2;
+	bool _borderEdge = true;
+	bool _isEdgeBgMode = false;
+	std::string _edgeMultiColumnPos;
+	bool _lineNumberDynamicWidth = true;
+	int _paddingLeft = 0;
+	int _paddingRight = 0;
+	int _distractionFreeDivPart = 4;
+	bool _addNewDocOnStartup = false;
+	bool _useContentAsTabName = false;
+	int _openSaveDir = 0;                       // 0 follow current doc, 1 remember last, 2 always this dir
+	std::string _defaultDirPath;
+	std::string _lastUsedDirPath;
+	bool _isFolderDroppedOpenFiles = false;
+	bool _checkHistoryFiles = false;
+	bool _langMenuCompact = true;
+	bool _backSlashIsEscapeCharacterForSql = true;
+	int _maintainIndent = 1;                    // 0 none, 1 basic, 2 advanced
+	bool _enableTagsMatchHilite = true;
+	bool _enableTagAttrsHilite = true;
+	bool _enableHiliteNonHTMLZone = false;
+	bool _findDlgAlwaysVisible = false;
+	bool _monospacedFontFindDlg = false;
+	bool _fillDirFieldFromActiveDoc = false;
+	int _fillFindWhatThreshold = 1024;
+	bool _fifIgnoreUnsavedChanges = false;
+	bool _keepSessionAbsentFileEntries = false;
+	int _autoCAction = 3;                       // 0 none, 1 function, 2 word, 3 both (auto-completion)
+	int _autoCFromNbChar = 1;
+	bool _autoCIgnoreNumbers = true;
+	bool _autoCInsertWithEnter = true;
+	bool _autoCInsertWithTab = true;
+	bool _autoCBrief = false;
+	bool _funcParams = true;
+	bool _insertParentheses = false;
+	bool _insertBrackets = false;
+	bool _insertCurlyBrackets = false;
+	bool _insertQuotes = false;
+	bool _insertDoubleQuotes = false;
+	bool _insertHtmlXmlTag = false;
+	int _multiInstSetting = 0;
+	bool _wordCharUseDefault = true;
+	std::string _wordCharsAdded;
+	int _leftmostDelimiter = 40;
+	int _rightmostDelimiter = 41;
+	bool _delimiterSelectionOnEntireDocument = false;
+	std::string _cloudPath;
+	int _urlMode = 2;                           // 0 off, 1 underline, 2 no underline? (upstream URL value)
+	std::string _uriCustomizedSchemes = "svn:// cvs:// git:// imap:// irc:// irc6:// ircs:// ldap:// ldaps:// news: telnet:// gopher:// ssh:// sftp:// smb:// skype: snmp:// spotify: steam:// sms: slack:// chrome:// bitcoin:";
+	int _searchEngineChoice = 2;
+	std::string _searchEngineCustom;
+	bool _largeFileRestrictionEnabled = true;
+	int _largeFileSizeMB = 200;
+	bool _largeFileAllowAutoCompletion = false;
+	bool _largeFileAllowBraceMatch = false;
+	bool _largeFileAllowSmartHilite = false;
+	bool _largeFileAllowClickableLink = false;
+	bool _largeFileDeactivateWordWrap = true;
+	bool _largeFileSuppress2GBWarning = false;
+	bool _muteSounds = false;
+	bool _shortTitlebar = false;
+	bool _saveAllConfirm = true;
+	bool _docPeekOnTab = false;
+	bool _docPeekOnMap = false;
+	std::string _sessionExt;
+	std::string _workspaceExt;
+
 	static NppSettings& instance()
 	{
 		static NppSettings s;

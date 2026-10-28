@@ -4,6 +4,7 @@
 #import "NppToolbar.h"
 #import "NppContextMenus.h"
 #import "NppTheme.h"
+#import "NppPreferences.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -109,6 +110,8 @@ namespace
 		                                           name: NSApplicationDidBecomeActiveNotification object: nil];
 		[NSNotificationCenter.defaultCenter addObserver: self selector: @selector(stylesChanged:)
 		                                           name: NppStylesChangedNotification object: nil];
+		[NSNotificationCenter.defaultCenter addObserver: self selector: @selector(settingsChanged:)
+		                                           name: NppSettingsChangedNotification object: nil];
 	}
 	return self;
 }
@@ -1063,6 +1066,19 @@ static NSString* withThousands(long n)
 		[_finder applyStyles];
 	[self refreshTabs];
 	[_editor setNeedsDisplay: YES];
+}
+
+// Preferences changed: re-apply editor, toolbar, tab bar and status bar settings.
+- (void)settingsChanged:(NSNotification*)n
+{
+	const NppSettings& s = NppSettings::instance();
+	[self applySettingsToEditor: _editor];
+	_toolbar.iconSet = (NppToolbarIconSet)s._toolbarIconSet;
+	_toolbar.hidden = !s._toolbarShow;
+	_toolbarHeight.constant = s._toolbarShow ? _toolbar.preferredHeight : 0;
+	_statusBar.hidden = !s._statusBarShow;
+	[self refreshTabs];
+	[self updateLineNumberMargin];
 }
 
 #pragma mark - Toolbar

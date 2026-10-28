@@ -100,7 +100,7 @@ Current Document, `1636` Find All in Opened Documents, `1609` Replace All,
 - [x] **Phase 3** — `config.xml` / `session.xml` in upstream format, session restore, snapshot backups, Load/Save Session, files changed/deleted outside the editor, all Encoding-menu codepages, uchardet detection (upstream's load order)
 - [x] **Phase 4** — toolbar from upstream `toolBarIcons[]` + icon files (Fluent light/dark, filled, standard), tab context menu (upstream default or `tabContextMenu.xml`), editor context menu (`contextMenu.xml`, created from upstream's default), pinned tabs, tab colours, tab bar options from `config.xml`
 - [x] **Phase 5** — Style Configurator (upstream `IDD_STYLER_DLG`, live edits, Save & Close / Cancel), themes from `themes/*.xml` (bundle + user dir), Global override, user keywords and user extensions, Light/Dark/Follow macOS mode with `lightThemeName` / `darkThemeName`, Windows-only theme fonts fall back to Menlo
-- [ ] **Phase 6** — Preferences dialog, localization (`nativeLang`)
+- [~] **Phase 6** — Preferences dialog done: all 24 upstream pages from `preference.rc`, ~150 controls bound to `config.xml` settings and applied live (Windows-only options shown disabled). Still to do: localization (`nativeLang`), per-language indent settings, Language-menu item exclusion
 - [ ] **Phase 7** — split view (move/clone), remaining Edit operations, Column editor, multi-select
 - [ ] **Phase 8** — macros, Run menu, auto-completion and call tips, panels (Function list, Document list, Folder as Workspace, Document map, Project panels, Clipboard history, Character panel)
 - [ ] **Phase 9** — User Defined Languages, printing, plugin support, Tools (MD5/SHA), final review
