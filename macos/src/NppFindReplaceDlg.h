@@ -54,4 +54,10 @@ typedef NS_ENUM(NSInteger, NppFindDialogType) {
 - (NSString*)findText;
 - (void)setFindText:(NSString*)text;
 
+// Macro recording: set while a macro records; receives upstream's
+// WM_FRSAVE_INT / WM_FRSAVE_STR steps (string is nil for integer steps).
+@property (nonatomic, copy) void (^macroRecorder)(int what, long intValue, NSString* string);
+// Plays back one recorded search step (FindReplaceDlg::execSavedCommand).
+- (void)execSavedCommand:(int)cmd intValue:(long)intValue string:(NSString*)stringValue;
+
 @end

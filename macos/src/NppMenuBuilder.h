@@ -17,6 +17,9 @@
 // Applies Notepad++'s default shortcuts (Parameters.cpp winKeyDefs/scintKeyDefs).
 + (void)applyDefaultShortcuts:(NSMenu*)menu;
 
+// Sets a Notepad++ (Win32 virtual-key) shortcut on an item, mapped like the defaults.
++ (void)setShortcutOf:(NSMenuItem*)mi key:(int)vKey ctrl:(BOOL)ctrl alt:(BOOL)alt shift:(BOOL)shift;
+
 // Windows wording -> macOS wording for a few commands ("Explorer" -> "Finder").
 + (NSString*)macTitle:(NSString*)title command:(int)cmd;
 

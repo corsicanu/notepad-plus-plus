@@ -20,6 +20,11 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 
 @interface NppMainWindow (EditOpsAPI)
 + (void)registerEditOps:(std::unordered_map<int, NppCommandHandler>&)t;
++ (void)registerMacroCommands:(std::unordered_map<int, NppCommandHandler>&)t;
++ (BOOL)isShortcutsXmlCommand:(int)cmd;
+- (void)runShortcutsXmlCommand:(int)cmd;
+- (void)recordCommand:(int)cmd run:(void (^)(void))run;
+- (BOOL)validateMacroCommand:(int)cmd;
 - (void)toggleBeginEndSelect:(BOOL)column;
 @end
 
@@ -693,6 +698,7 @@ namespace
 	t[IDM_ONLINEDOCUMENT] = openURL(@"https://npp-user-manual.org/");
 	t[IDM_FORUM] = openURL(@"https://community.notepad-plus-plus.org/");
 	t[IDM_ABOUT] = ^(NppMainWindow*) { [NSApp orderFrontStandardAboutPanel: nil]; };
+	[NppMainWindow registerMacroCommands: t];
 
 	return t;
 }
@@ -701,10 +707,18 @@ namespace
 {
 	const auto& table = [NppMainWindow commandTable];
 	auto it = table.find(cmd);
-	if (it == table.end())
-		return NO;
-	it->second(self);
-	return YES;
+	if (it != table.end())
+	{
+		NppCommandHandler h = it->second;
+		[self recordCommand: cmd run: ^{ h(self); }];
+		return YES;
+	}
+	if ([NppMainWindow isShortcutsXmlCommand: cmd])
+	{
+		[self runShortcutsXmlCommand: cmd];
+		return YES;
+	}
+	return NO;
 }
 
 - (void)nppCommand:(id)sender
@@ -1008,8 +1022,12 @@ static int textCodepage(NppBuffer* b)
 		return [self respondsToSelector: item.action];
 
 	int cmd = (int)item.tag;
+	if ([NppMainWindow isShortcutsXmlCommand: cmd])
+		return YES;
 	const auto& table = [NppMainWindow commandTable];
 	if (table.find(cmd) == table.end())
+		return NO;
+	if (![self validateMacroCommand: cmd])
 		return NO;
 
 	NppBuffer* b = [self currentBuffer];

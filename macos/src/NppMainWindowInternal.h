@@ -7,6 +7,8 @@
 #import "NppFindReplaceDlg.h"
 #import "ScintillaView.h"
 
+#include <string>
+
 // Margins and markers, as in ScintillaEditView.
 enum
 {
@@ -75,6 +77,8 @@ enum
 - (void)togglePinCurrent;
 - (void)setCurrentTabColor:(int)color;
 - (void)moveCurrentTabTo:(NSInteger)to;
+- (NSArray<ScintillaView*>*)allEditors;
+
 - (NppBuffer*)openSessionFile:(NSString*)file backup:(NSString*)backup encoding:(int)encoding;
 
 @end
@@ -88,4 +92,12 @@ enum
 - (void)loadSessionFromPath:(NSString*)path;
 - (void)checkModifiedFiles;
 - (void)snapshotTick:(NSTimer*)t;
+@end
+
+// Macros and Run menu (NppMacros.mm).
+@interface NppMainWindow (Macros)
+- (void)macroRecordNotification:(SCNotification*)n;
+- (void)saveCurrentMacroNamed:(NSString*)name;
+- (void)runUserCommand:(const std::string&)cmd;
+- (BOOL)isRecordingMacro;
 @end

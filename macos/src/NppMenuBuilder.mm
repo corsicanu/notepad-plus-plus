@@ -311,6 +311,13 @@ namespace
 	return out;
 }
 
++ (void)setShortcutOf:(NSMenuItem*)mi key:(int)vKey ctrl:(BOOL)ctrl alt:(BOOL)alt shift:(BOOL)shift
+{
+	mi.keyEquivalent = @"";
+	mi.keyEquivalentModifierMask = 0;
+	assign(mi, vKey, ctrl, alt, shift);
+}
+
 + (void)applyDefaultShortcuts:(NSMenu*)menu
 {
 	std::map<int, NSMenuItem*> byTag;

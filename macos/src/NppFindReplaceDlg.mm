@@ -6,6 +6,7 @@
 #include "FindReplaceDlg_rc.h"
 
 #include <fnmatch.h>
+#include <memory>
 
 namespace
 {
@@ -165,6 +166,10 @@ namespace
 
 	NSMutableArray<NSButton*>* _actionButtons;
 	NSTextField* _status;
+
+	// Macro playback (execSavedCommand): options of the step being replayed.
+	std::unique_ptr<FindOption> _env;
+	FindOption* _savedEnv;
 }
 
 - (SearchEngine&)engine
@@ -531,6 +536,8 @@ namespace
 
 - (FindOption)currentOptions
 {
+	if (_savedEnv)
+		return *_savedEnv;
 	FindOption o;
 	o._isWholeWord = _wholeWord.state && !_modeRegex.state;
 	o._isMatchCase = _matchCase.state;
@@ -686,6 +693,7 @@ namespace
 	FindOption opt = [self currentOptions];
 	if (shift)
 		opt._whichDirection = !opt._whichDirection;
+	[self saveInMacro: IDOK type: FR_OP_FIND opt: opt];
 	FindStatus st;
 	ScintillaView* ed = [_host currentEditor];
 	bool found = _engine.processFindNext(ed, opt._str2Search, opt, &st);
@@ -699,6 +707,7 @@ namespace
 {
 	[self updateCombos];
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDCCOUNTALL type: FR_OP_FIND opt: opt];
 	int nb = _engine.processAll([_host currentEditor], ProcessCountAll, opt, false);
 	[self reportCount: nb prefix: @"Count: %ld matches" one: @"Count: 1 match" opt: opt];
 }
@@ -707,6 +716,7 @@ namespace
 {
 	[self updateCombos];
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDREPLACE type: FR_OP_REPLACE opt: opt];
 	_engine.processReplace([_host currentEditor], [_host currentDocumentIsReadOnly], opt._str2Search, opt._str4Replace, opt,
 	                       NppSettings::instance()._replaceStopsWithoutFindingNext);
 }
@@ -720,6 +730,7 @@ namespace
 		return;
 	}
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDREPLACEALL type: FR_OP_REPLACE opt: opt];
 	ScintillaView* ed = [_host currentEditor];
 	[ed message: SCI_BEGINUNDOACTION];
 	int nb = _engine.processAll(ed, ProcessReplaceAll, opt, false);
@@ -752,6 +763,7 @@ namespace
 	if (NppSettings::instance()._confirmReplaceInAllOpenDocs && ![self confirm: @"Are you sure you want to replace all occurrences in all open documents?"])
 		return;
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDC_REPLACE_OPENEDFILES type: FR_OP_REPLACE + FR_OP_GLOBAL opt: opt];
 	opt._isInSelection = false;
 	__block int total = 0;
 	__block BOOL invalid = NO;
@@ -829,6 +841,7 @@ namespace
 {
 	[self updateCombos];
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDC_FINDALL_CURRENTFILE type: FR_OP_FIND + FR_OP_GLOBAL opt: opt];
 	NppFinder* finder = [_host showFinder];
 	ScintillaView* ed = [_host currentEditor];
 	BOOL entire = !opt._isInSelection;
@@ -844,6 +857,7 @@ namespace
 {
 	[self updateCombos];
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDC_FINDALL_OPENEDFILES type: FR_OP_FIND + FR_OP_GLOBAL opt: opt];
 	opt._isInSelection = false;
 	NppFinder* finder = [_host showFinder];
 	id<NppFindHost> host = _host;
@@ -877,6 +891,7 @@ namespace
 {
 	[self updateCombos];
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDD_FINDINFILES_FIND_BUTTON type: FR_OP_FIND + FR_OP_FIF opt: opt];
 	opt._isInSelection = false;
 	NSArray* files = [self filesForFindInFiles: opt];
 	if (!files)
@@ -902,6 +917,7 @@ namespace
 {
 	[self updateCombos];
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDD_FINDINFILES_REPLACEINFILES type: FR_OP_REPLACE + FR_OP_FIF opt: opt];
 	opt._isInSelection = false;
 	NSArray* files = [self filesForFindInFiles: opt];
 	if (!files)
@@ -946,13 +962,16 @@ namespace
 {
 	[self updateCombos];
 	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDCMARKALL type: FR_OP_FIND opt: opt];
 	int nb = _engine.processAll([_host currentEditor], ProcessMarkAll, opt, false);
 	[self reportCount: nb prefix: @"Mark: %ld matches" one: @"Mark: 1 match" opt: opt];
 }
 
 - (void)doClearMarks:(id)sender
 {
-	_engine.clearMarks([_host currentEditor], [self currentOptions]);
+	FindOption opt = [self currentOptions];
+	[self saveInMacro: IDC_CLEAR_ALL type: FR_OP_FIND opt: opt];
+	_engine.clearMarks([_host currentEditor], opt);
 }
 
 - (void)doCopyMarked:(id)sender
@@ -1055,6 +1074,128 @@ namespace
 		case IDD_FINDINFILES_REPLACEINFILES: [self doReplaceInFiles: nil]; break;
 		case IDCMARKALL: [self doMarkAll: nil]; break;
 		case IDC_CLEAR_ALL: [self doClearMarks: nil]; break;
+	}
+}
+
+#pragma mark - Macros
+
+namespace
+{
+	const int FR_OP_FIND = 1;
+	const int FR_OP_REPLACE = 2;
+	const int FR_OP_FIF = 4;
+	const int FR_OP_GLOBAL = 8;
+}
+
+// Port of FindReplaceDlg::saveInMacro: records the search as mtSavedSnR steps.
+- (void)saveInMacro:(int)cmd type:(int)cmdType opt:(const FindOption&)o
+{
+	if (!_macroRecorder)
+		return;
+	auto saveInt = [&](int what, long v) { _macroRecorder(what, v, nil); };
+	auto saveStr = [&](int what, const std::string& v) { _macroRecorder(what, 0, [NSString stringWithUTF8String: v.c_str()] ?: @""); };
+	int booleans = 0;
+	saveInt(IDC_FRCOMMAND_INIT, 0);
+	saveStr(IDFINDWHAT, cmd == IDC_CLEAR_ALL ? "" : o._str2Search);
+	booleans |= o._isWholeWord ? IDF_WHOLEWORD : 0;
+	booleans |= o._isMatchCase ? IDF_MATCHCASE : 0;
+	booleans |= o._dotMatchesNewline ? IDF_REDOTMATCHNL : 0;
+
+	saveInt(IDNORMAL, o._searchType);
+	if (cmd == IDCMARKALL)
+	{
+		booleans |= o._doPurge ? IDF_PURGE_CHECK : 0;
+		booleans |= o._doMarkLine ? IDF_MARKLINE_CHECK : 0;
+	}
+	if (cmdType & FR_OP_REPLACE)
+		saveStr(IDREPLACEWITH, o._str4Replace);
+	if (cmdType & FR_OP_FIF)
+	{
+		saveStr(IDD_FINDINFILES_DIR_COMBO, o._directory);
+		saveStr(IDD_FINDINFILES_FILTERS_COMBO, o._filters);
+		booleans |= o._isRecursive ? IDF_FINDINFILES_RECURSIVE_CHECK : 0;
+		booleans |= o._isInHiddenDir ? IDF_FINDINFILES_INHIDDENDIR_CHECK : 0;
+	}
+	else if (!(cmdType & FR_OP_GLOBAL))
+	{
+		booleans |= o._isInSelection ? IDF_IN_SELECTION_CHECK : 0;
+		booleans |= o._isWrapAround ? IDF_WRAP : 0;
+		booleans |= o._whichDirection ? IDF_WHICH_DIRECTION : 0;
+	}
+	else if (cmdType == FR_OP_FIND + FR_OP_GLOBAL)
+	{
+		booleans |= o._isInSelection ? IDF_IN_SELECTION_CHECK : 0;
+	}
+	if (cmd == IDC_CLEAR_ALL)
+	{
+		booleans = o._doMarkLine ? IDF_MARKLINE_CHECK : 0;
+		booleans |= o._isInSelection ? IDF_IN_SELECTION_CHECK : 0;
+	}
+	saveInt(IDC_FRCOMMAND_BOOLEANS, booleans);
+	saveInt(IDC_FRCOMMAND_EXEC, cmd);
+}
+
+// Port of FindReplaceDlg::execSavedCommand.
+- (void)execSavedCommand:(int)cmd intValue:(long)intValue string:(NSString*)stringValue
+{
+	std::string str = stringValue.UTF8String ?: "";
+	if (cmd != IDC_FRCOMMAND_INIT && !_env)
+		return;
+	switch (cmd)
+	{
+		case IDC_FRCOMMAND_INIT:
+			_env = std::make_unique<FindOption>();
+			break;
+		case IDFINDWHAT:
+			_env->_str2Search = str;
+			break;
+		case IDC_FRCOMMAND_BOOLEANS:
+			_env->_isWholeWord = (intValue & IDF_WHOLEWORD) > 0;
+			_env->_isMatchCase = (intValue & IDF_MATCHCASE) > 0;
+			_env->_isRecursive = (intValue & IDF_FINDINFILES_RECURSIVE_CHECK) > 0;
+			_env->_isInHiddenDir = (intValue & IDF_FINDINFILES_INHIDDENDIR_CHECK) > 0;
+			_env->_doPurge = (intValue & IDF_PURGE_CHECK) > 0;
+			_env->_doMarkLine = (intValue & IDF_MARKLINE_CHECK) > 0;
+			_env->_isInSelection = (intValue & IDF_IN_SELECTION_CHECK) > 0;
+			_env->_isWrapAround = (intValue & IDF_WRAP) > 0;
+			_env->_whichDirection = (intValue & IDF_WHICH_DIRECTION) > 0;
+			_env->_dotMatchesNewline = (intValue & IDF_REDOTMATCHNL) > 0;
+			break;
+		case IDNORMAL:
+			_env->_searchType = static_cast<SearchType>(intValue);
+			break;
+		case IDREPLACEWITH:
+			_env->_str4Replace = str;
+			break;
+		case IDD_FINDINFILES_DIR_COMBO:
+			_env->_directory = str;
+			break;
+		case IDD_FINDINFILES_FILTERS_COMBO:
+			_env->_filters = str;
+			break;
+		case IDC_FRCOMMAND_EXEC:
+		{
+			int exec = static_cast<int>(intValue);
+			// 7.5.5 - 7.8.4 macros: IDC_FINDNEXT / IDC_FINDPREV.
+			if (exec == IDC_FINDNEXT || exec == IDC_FINDPREV)
+			{
+				_env->_whichDirection = exec == IDC_FINDNEXT ? DIR_DOWN : DIR_UP;
+				exec = IDOK;
+			}
+			auto recorder = _macroRecorder;
+			_macroRecorder = nil;
+			_savedEnv = _env.get();
+			if (exec == IDOK)
+			{
+				FindStatus st;
+				_engine.processFindNext([_host currentEditor], _env->_str2Search, *_env, &st);
+			}
+			else
+				[self execDialogCommand: exec];
+			_savedEnv = nullptr;
+			_macroRecorder = recorder;
+			break;
+		}
 	}
 }
 

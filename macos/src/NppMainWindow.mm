@@ -980,6 +980,9 @@ static NSString* withThousands(long n)
 	NppBuffer* b = [self currentBuffer];
 	switch (n->nmhdr.code)
 	{
+		case SCN_MACRORECORD:
+			[self macroRecordNotification: n];
+			break;
 		case SCN_SAVEPOINTREACHED:
 		case SCN_SAVEPOINTLEFT:
 			if (b)
@@ -1369,6 +1372,11 @@ static NSString* withThousands(long n)
 	[self closeBufferAtIndex: 0 force: YES];
 }
 
+- (NSArray<ScintillaView*>*)allEditors
+{
+	return @[_panes[0].editor, _panes[1].editor];
+}
+
 - (BOOL)otherViewVisible
 {
 	return [self paneVisible: 1 - _activePane];
@@ -1724,6 +1732,16 @@ static NSString* withThousands(long n)
 
 - (void)runFindTestHook:(NSString*)key value:(NSString*)value
 {
+	if ([key isEqualToString: @"macrosave"])
+	{
+		[self saveCurrentMacroNamed: value];
+		return;
+	}
+	if ([key isEqualToString: @"run"])
+	{
+		[self runUserCommand: value.UTF8String];
+		return;
+	}
 	if ([key isEqualToString: @"insert"])
 	{
 		[_editor message: SCI_REPLACESEL wParam: 0 lParam: reinterpret_cast<sptr_t>(value.UTF8String)];

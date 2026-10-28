@@ -57,6 +57,9 @@ public:
 	bool appMaximized = false;
 	bool appPositionValid = false;
 
+	// HMAC of shortcuts.xml approved by the user (<GUIConfig name="shortcutsXmlHMAC">).
+	std::string shortcutsXmlHmac;
+
 	static bool loadSession(const std::string& path, Session& session);
 	static bool saveSession(const std::string& path, const Session& session);
 	std::string sessionPath() const { return _dir + "/session.xml"; }

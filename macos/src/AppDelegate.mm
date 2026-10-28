@@ -9,8 +9,13 @@
 #import "NppTheme.h"
 #import "NppLocalization.h"
 
+@interface NppMainWindow (MacroMenus)
++ (void)installShortcutsXmlItemsIn:(NSMenu*)bar;
+@end
+
 #include "LangManager.h"
 #include "NppConfig.h"
+#include "NppShortcuts.h"
 #include "NppSettings.h"
 #include "NppUpstream.h"
 
@@ -109,6 +114,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 
 	[NppMenuBuilder applyDefaultShortcuts: bar];
 	[NppLocalization applyToMainMenu: bar topOffset: 1];
+	[NppMainWindow installShortcutsXmlItemsIn: bar];
 	NSApp.mainMenu = bar;
 	// After the bar is installed, so AppKit doesn't add its own "Window" menu
 	// when the localized title differs.
@@ -160,6 +166,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 - (void)applicationWillFinishLaunching:(NSNotification*)notification
 {
 	NppConfig::instance().load();
+	NppShortcuts::instance().load();
 	LangManager::instance().load(NSBundle.mainBundle.resourcePath.fileSystemRepresentation);
 	[NppLocalization loadLanguage];
 	[self buildMenus];
@@ -196,6 +203,10 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 			[commands addObject: @([args[++i] intValue])];
 		else if ([args[i] isEqualToString: @"--insert"] && i + 1 < args.count)
 			[commands addObject: @[@"insert", args[++i]]];
+		else if ([args[i] isEqualToString: @"--macro-save"] && i + 1 < args.count)
+			[commands addObject: @[@"macrosave", args[++i]]];
+		else if ([args[i] isEqualToString: @"--run"] && i + 1 < args.count)
+			[commands addObject: @[@"run", args[++i]]];
 		else if ([args[i] hasPrefix: @"--find-"] && i + 1 < args.count)
 		{
 			// Test hooks for the Find dialog: --find-text/--find-replace/--find-dir/--find-filters/--find-dlg

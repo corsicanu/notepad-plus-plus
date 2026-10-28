@@ -134,6 +134,7 @@ typedef wchar_t TCHAR;
 #define VK_NUMPAD8 0x68
 #define VK_NUMPAD9 0x69
 #define VK_DECIMAL 0x6E
+#define VK_SEPARATOR 0x6C
 #define VK_CLEAR 0x0C
 #define VK_PAUSE 0x13
 #define VK_CAPITAL 0x14
@@ -157,6 +158,18 @@ typedef wchar_t TCHAR;
 #define VK_F10 0x79
 #define VK_F11 0x7A
 #define VK_F12 0x7B
+#define VK_F13 0x7C
+#define VK_F14 0x7D
+#define VK_F15 0x7E
+#define VK_F16 0x7F
+#define VK_F17 0x80
+#define VK_F18 0x81
+#define VK_F19 0x82
+#define VK_F20 0x83
+#define VK_F21 0x84
+#define VK_F22 0x85
+#define VK_F23 0x86
+#define VK_F24 0x87
 #define VK_OEM_1 0xBA
 #define VK_OEM_PLUS 0xBB
 #define VK_OEM_COMMA 0xBC
@@ -168,6 +181,7 @@ typedef wchar_t TCHAR;
 #define VK_OEM_5 0xDC
 #define VK_OEM_6 0xDD
 #define VK_OEM_7 0xDE
+#define VK_OEM_8 0xDF
 #define VK_OEM_102 0xE2
 
 inline int _stricmp(const char* a, const char* b) { return strcasecmp(a, b); }

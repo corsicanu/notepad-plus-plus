@@ -34,6 +34,7 @@ file formats, so they can be copied to/from a Windows `%APPDATA%\Notepad++`:
 
 - `config.xml` — `GUIConfigs`, `FindHistory`, `History` (recent files). Elements the port
   doesn't use yet are kept untouched when the file is rewritten.
+- `shortcuts.xml` — saved macros and Run menu commands (upstream format, created from upstream's default). Like upstream, it is protected by an HMAC kept in `config.xml`: after editing it by hand, use Run > Validate shortcuts.xml.
 - `session.xml` — open files, caret/scroll position, bookmarks, folds, language, encoding.
 - `backup/` — snapshots of unsaved documents ("Enable session snapshot and periodic backup",
   on by default as upstream): on quit nothing is asked; unsaved tabs come back next launch.
@@ -93,6 +94,9 @@ its first button, so scripted runs never block. `-nosession` skips loading and s
 Current Document, `1636` Find All in Opened Documents, `1609` Replace All,
 `1656` Find in Files, `1615` Mark All).
 
+`--macro-save NAME` saves the recorded macro into `shortcuts.xml`; `--run "CMD"` runs a
+command line like the Run dialog (with `$(FULL_CURRENT_PATH)`-style variables).
+
 ## Status
 
 - [x] **Phase 1** — window, tabs, status bar, file I/O (ANSI/UTF-8/UTF-8-BOM/UTF-16), all languages and default styles, folding, bookmarks
@@ -102,7 +106,7 @@ Current Document, `1636` Find All in Opened Documents, `1609` Replace All,
 - [x] **Phase 5** — Style Configurator (upstream `IDD_STYLER_DLG`, live edits, Save & Close / Cancel), themes from `themes/*.xml` (bundle + user dir), Global override, user keywords and user extensions, Light/Dark/Follow macOS mode with `lightThemeName` / `darkThemeName`, Windows-only theme fonts fall back to Menlo
 - [x] **Phase 6** — Preferences: all 24 upstream pages from `preference.rc`, ~150 controls bound to `config.xml` and applied live (Windows-only options shown disabled). Localization from `nativeLang/*.xml` (copied to `nativeLang.xml` like upstream): main menu via upstream's `g_menuFolderPositions`, Preferences, Style Configurator and Find Characters in Range. Compact/flat Language menu. Not yet: per-language indent settings, Language-menu item exclusion, translating the hand-built Find dialog
 - [x] **Phase 7** — done: line sorting with upstream `Sorters.h` (compiled unchanged), duplicate/empty-line removal, blank lines above/below, trim/EOL/tab-space blank operations, proper/sentence/invert/random case, single-line and stream comments, Multi-select All/Next/Undo/Skip, Begin/End Select, On Selection (open file, Finder, search engine), read-only for all docs, custom date/time, Column Editor (upstream `IDD_COLUMNEDIT`), split view (main/sub view side by side: Move/Clone to Other View, Focus on Another View, synchronized vertical/horizontal scrolling, sub view saved in `session.xml`), Paste HTML/RTF Content, binary Copy/Cut/Paste, Redact Selection
-- [ ] **Phase 8** — macros, Run menu, auto-completion and call tips, panels (Function list, Document list, Folder as Workspace, Document map, Project panels, Clipboard history, Character panel)
+- [~] **Phase 8** — done: macros (record, playback, save to `shortcuts.xml`, Run a Macro Multiple Times, recorded Find/Replace steps, saved macros in the Macro menu with their shortcuts and folders), Run menu (Run dialog with variables, saved commands, shortcuts.xml validation). Still to do: auto-completion and call tips, panels (Function list, Document list, Folder as Workspace, Document map, Project panels, Clipboard history, Character panel)
 - [ ] **Phase 9** — User Defined Languages, printing, plugin support, Tools (MD5/SHA), final review
 
 `--dump-menus` shows the exact remaining items.

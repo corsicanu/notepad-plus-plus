@@ -32,7 +32,7 @@ APP_INC  := $(SCI_INC) $(LEX_INC) -I$(NPP)/src/pugixml -Isrc -Icompat -I$(GEN) \
             -I$(NPP)/src -I$(NPP)/src/MISC/Common -I$(NPP)/src/MISC/PluginsManager \
             -I$(NPP)/src/ScintillaComponent -I$(NPP)/src/WinControls/FindCharsInRange -I$(NPP)/src/uchardet \
             -I$(NPP)/src/WinControls/ColourPicker -I$(NPP)/src/WinControls/Preference -I$(NPP)/src/WinControls/shortcut \
-            -I$(NPP)/src/WinControls/Grid
+            -I$(NPP)/src/WinControls/Grid -I$(NPP)/src/WinControls/StaticDialog/RunDlg
 
 # --- Scintilla (core + Cocoa platform layer) -------------------------------
 SCI_SRC  := $(wildcard $(SCI)/src/*.cxx)
@@ -60,7 +60,7 @@ LIBNPP   := $(BUILD)/libnppcore.a
 EXE      := $(APP)/Contents/MacOS/Notepad++
 RES      := $(APP)/Contents/Resources
 
-FRAMEWORKS := -framework Cocoa -framework QuartzCore -framework UniformTypeIdentifiers
+FRAMEWORKS := -framework Cocoa -framework QuartzCore -framework UniformTypeIdentifiers -framework IOKit
 
 .PHONY: all run install clean
 all: $(EXE) resources sign
@@ -87,10 +87,12 @@ $(OBJ)/lex/%.cxx.o: $(LEX)/%.cxx
 
 # Tables lifted from upstream sources (see tools/gen_upstream.sh).
 GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc \
-            $(GEN)/ToolbarIcons.inc $(GEN)/TabContextMenu.inc $(GEN)/PrefPages.inc $(GEN)/MenuFolderPositions.inc
+            $(GEN)/ToolbarIcons.inc $(GEN)/TabContextMenu.inc $(GEN)/PrefPages.inc $(GEN)/MenuFolderPositions.inc \
+            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc
 $(GEN_INC): $(GEN)/.stamp
 $(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp $(NPP)/src/NppNotification.cpp \
-             $(NPP)/src/WinControls/Preference/preferenceDlg.cpp $(NPP)/src/localization.cpp
+             $(NPP)/src/WinControls/Preference/preferenceDlg.cpp $(NPP)/src/localization.cpp \
+             $(NPP)/src/NppCommands.cpp $(NPP)/src/WinControls/shortcut/shortcut.cpp
 	@echo "  GEN   upstream tables"
 	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
 	@touch $@
@@ -135,7 +137,7 @@ resources: $(EXE)
 	@cp $(NPP)/src/Notepad_plus.rc $(RES)/Notepad_plus.rc
 	@rsync -a --delete $(NPP)/src/icons/ $(RES)/icons/
 	@mkdir -p $(RES)/rc
-	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name '*Res.h' -o -name '*Resource.h' -o -name '*resource.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
+	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name '*Res.h' -o -name '*Rc.h' -o -name '*Resource.h' -o -name '*resource.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
 	@cp $(NPP)/installer/themes/*.xml $(RES)/themes/ 2>/dev/null || true
 	@cp $(NPP)/installer/nativeLang/*.xml $(RES)/localization/ 2>/dev/null || true
 	@for n in info_bar_bg mac_cursor_busy mac_cursor_flipped; do \

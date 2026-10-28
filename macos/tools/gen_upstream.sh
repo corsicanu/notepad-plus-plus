@@ -54,6 +54,15 @@ mv "$OUT/PrefPages.inc.tmp" "$OUT/PrefPages.inc"
 awk '/static constexpr MenuPosition g_menuFolderPositions\[\]/{m=1; next} m&&/^};/{exit} m&&/^[[:space:]]*\{/' "$SRC/localization.cpp" > "$OUT/MenuFolderPositions.inc.tmp"
 mv "$OUT/MenuFolderPositions.inc.tmp" "$OUT/MenuFolderPositions.inc"
 
-for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions; do
+# 9. Menu commands recorded into macros (NppCommands.cpp: "if (_recordingMacro) switch (id)").
+awk 'm&&/_macro\.push_back\(recordedMacroStep\(id\)\);/{exit} m{print} p&&/switch \(id\)/{m=1} {p=0} /^[[:space:]]*if \(_recordingMacro\)[[:space:]]*$/{p=1}' "$SRC/NppCommands.cpp" \
+	| grep -E '^[[:space:]]*case[[:space:]]+[A-Z_0-9]+[[:space:]]*:' | sed -E 's/.*case[[:space:]]+([A-Z_0-9]+).*/\t\1,/' > "$OUT/MacroableCommands.inc.tmp"
+mv "$OUT/MacroableCommands.inc.tmp" "$OUT/MacroableCommands.inc"
+
+# 10. Key names for shortcut dialogs (shortcut.cpp: namedKeyArray[]).
+awk '/^KeyIDNAME namedKeyArray\[\] = \{/{m=1; next} m&&/^};/{exit} m&&/^\{/' "$SRC/WinControls/shortcut/shortcut.cpp" > "$OUT/NamedKeys.inc.tmp"
+mv "$OUT/NamedKeys.inc.tmp" "$OUT/NamedKeys.inc"
+
+for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys; do
 	[ -s "$OUT/$f.inc" ] || { echo "gen_upstream: $f.inc is empty, upstream layout changed" >&2; exit 1; }
 done

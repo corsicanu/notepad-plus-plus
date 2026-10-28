@@ -195,6 +195,8 @@ void NppConfig::load()
 		s._findHistoryReplaces = readList(f, "Replace");
 	}
 
+	if (pugi::xml_node n = gui("shortcutsXmlHMAC", false))
+		shortcutsXmlHmac = n.attribute("value").as_string("");
 	if (pugi::xml_node n = gui("AppPosition", false))
 	{
 		appX = getInt(n, "x", appX);
@@ -391,6 +393,9 @@ void NppConfig::save()
 	writeList(f, "Filter", s._findHistoryFilters);
 	writeList(f, "Find", s._findHistoryFinds);
 	writeList(f, "Replace", s._findHistoryReplaces);
+
+	if (!shortcutsXmlHmac.empty())
+		setAttr(gui("shortcutsXmlHMAC", true), "value", shortcutsXmlHmac.c_str());
 
 	pugi::xml_node n = gui("AppPosition", true);
 	setAttr(n, "x", appX);
