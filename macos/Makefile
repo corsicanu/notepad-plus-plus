@@ -67,7 +67,7 @@ RES      := $(APP)/Contents/Resources
 
 FRAMEWORKS := -framework Cocoa -framework QuartzCore -framework UniformTypeIdentifiers -framework IOKit
 
-.PHONY: all run install clean
+.PHONY: all run install dmg clean
 all: $(EXE) resources sign
 
 $(OBJ)/sci/%.cxx.o: $(SCI)/%.cxx
@@ -171,6 +171,19 @@ install: all
 	@mkdir -p $(HOME)/Applications
 	@cp -R $(APP) $(HOME)/Applications/
 	@echo "Installed to ~/Applications/Notepad++.app"
+
+# Disk image: the app next to an Applications link, for drag-and-drop install.
+VERSION  := $(shell /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' Info.plist)
+DMG      := $(BUILD)/Notepad++-$(VERSION)-macOS.dmg
+
+dmg: all
+	@rm -rf $(BUILD)/dmg $(DMG)
+	@mkdir -p $(BUILD)/dmg
+	@cp -R $(APP) $(BUILD)/dmg/
+	@ln -s /Applications $(BUILD)/dmg/Applications
+	@hdiutil create -quiet -volname "Notepad++" -srcfolder $(BUILD)/dmg -format UDZO -ov $(DMG)
+	@rm -rf $(BUILD)/dmg
+	@echo "  DMG   $(DMG)"
 
 clean:
 	rm -rf $(BUILD)
