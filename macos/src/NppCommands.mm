@@ -6,6 +6,7 @@
 #import "NppFindCharsInRange.h"
 #import "NppStyleConfigurator.h"
 #import "NppPreferences.h"
+#import "NppColumnEditor.h"
 
 #include "LangManager.h"
 #include "NppSettings.h"
@@ -16,6 +17,11 @@
 #include <unordered_map>
 
 typedef void (^NppCommandHandler)(NppMainWindow* w);
+
+@interface NppMainWindow (EditOpsAPI)
++ (void)registerEditOps:(std::unordered_map<int, NppCommandHandler>&)t;
+- (void)toggleBeginEndSelect:(BOOL)column;
+@end
 
 @interface NppMainWindow (CommandsInternal)
 + (const std::unordered_map<int, NppCommandHandler>&)commandTable;
@@ -649,6 +655,25 @@ namespace
 			[w applyLanguage: w.currentBuffer];
 		};
 	}
+
+	[NppMainWindow registerEditOps: t];
+	// "Column Mode..." explains how to make a column selection (Alt+drag upstream, Option+drag here).
+	t[IDM_EDIT_COLUMNMODETIP] = ^(NppMainWindow*) {
+		NSAlert* a = [[NSAlert alloc] init];
+		a.messageText = @"Column Mode";
+		a.informativeText = @"Hold Option and drag with the mouse, or use Option+Shift+Arrow keys, to make a column selection.";
+		[a runModal];
+	};
+	// "Column Editor..." (Alt+C).
+	t[IDM_EDIT_COLUMNMODE] = ^(NppMainWindow* w) {
+		static NppColumnEditor* col = nil;
+		if (!col)
+		{
+			__weak NppMainWindow* weak = w;
+			col = [[NppColumnEditor alloc] initWithEditor: ^ScintillaView* { return weak.editor; }];
+		}
+		[col show];
+	};
 
 	// ---- Settings ----
 	t[IDM_SETTING_PREFERENCE] = ^(NppMainWindow*) { [[NppPreferences shared] show]; };
