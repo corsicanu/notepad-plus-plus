@@ -4,6 +4,7 @@
 #import "NppPanels.h"
 #import "NppMainWindowInternal.h"
 #import "NppPreferences.h"
+#import "NppWorkspacePanels.h"
 
 #include "NppAsciiTable.h"
 #include "NppSettings.h"
@@ -477,6 +478,8 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 		case IDM_EDIT_CLIPBOARDHISTORY_PANEL: p = [[NppClipboardHistoryPanel alloc] initWithWindow: self]; break;
 		case IDM_EDIT_CHAR_PANEL: p = [[NppCharacterPanel alloc] initWithWindow: self]; break;
 		case IDM_VIEW_DOCLIST: p = [[NppDocumentListPanel alloc] initWithWindow: self]; side = NppDockLeft; break;
+		case IDM_VIEW_FILEBROWSER: p = [[NppFolderAsWorkspacePanel alloc] initWithWindow: self]; side = NppDockLeft; break;
+		case IDM_VIEW_DOC_MAP: p = [[NppDocumentMapPanel alloc] initWithWindow: self]; break;
 		default: return nil;
 	}
 	[dock addPanel: p forCommand: cmd side: side];
@@ -509,9 +512,22 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 
 + (void)registerPanelCommands:(std::unordered_map<int, NppCommandHandler>&)t
 {
-	for (int cmd : {IDM_EDIT_CLIPBOARDHISTORY_PANEL, IDM_EDIT_CHAR_PANEL, IDM_VIEW_DOCLIST})
+	for (int cmd : {IDM_EDIT_CLIPBOARDHISTORY_PANEL, IDM_EDIT_CHAR_PANEL, IDM_VIEW_DOCLIST, IDM_VIEW_FILEBROWSER, IDM_VIEW_DOC_MAP})
 		t[cmd] = ^(NppMainWindow* w) { [w togglePanel: cmd]; };
 	t[IDM_VIEW_SWITCHTO_DOCLIST] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_DOCLIST]; };
+	t[IDM_VIEW_SWITCHTO_FILEBROWSER] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_FILEBROWSER]; };
+	// File > Open Folder as Workspace...
+	t[IDM_FILE_OPENFOLDERASWORKSPACE] = ^(NppMainWindow* w) {
+		NSOpenPanel* p = [NSOpenPanel openPanel];
+		p.canChooseDirectories = YES;
+		p.canChooseFiles = NO;
+		p.message = @"Select a folder to add in Folder as Workspace panel";
+		if ([p runModal] != NSModalResponseOK)
+			return;
+		NppFolderAsWorkspacePanel* fb = (NppFolderAsWorkspacePanel*)[w panelForCommand: IDM_VIEW_FILEBROWSER];
+		[fb addRoot: p.URL.path];
+		[w.dock showPanel: IDM_VIEW_FILEBROWSER];
+	};
 }
 
 @end

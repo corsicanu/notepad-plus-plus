@@ -87,6 +87,7 @@ enum
 - (NSImage*)tabStateImageFor:(NppBuffer*)b;
 - (NSMenu*)documentListContextMenu;
 - (void)postDocumentsChanged;
+- (void)findInFilesInDirectory:(NSString*)dir;
 
 - (NppBuffer*)openSessionFile:(NSString*)file backup:(NSString*)backup encoding:(int)encoding;
 

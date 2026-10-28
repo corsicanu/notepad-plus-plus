@@ -57,6 +57,10 @@ public:
 	bool appMaximized = false;
 	bool appPositionValid = false;
 
+	// Folder as Workspace (<FileBrowser latestSelectedItem=""><root foldername=""/>).
+	std::vector<std::string> fileBrowserRoots;
+	std::string fileBrowserSelectedItem;
+
 	// HMAC of shortcuts.xml approved by the user (<GUIConfig name="shortcutsXmlHMAC">).
 	std::string shortcutsXmlHmac;
 

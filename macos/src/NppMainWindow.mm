@@ -6,6 +6,7 @@
 #import "NppTheme.h"
 #import "NppPreferences.h"
 #import "NppPanels.h"
+#import "NppWorkspacePanels.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -964,6 +965,8 @@ static NSString* withThousands(long n)
 		[self notification: n];
 		if (n->nmhdr.code == SCN_UPDATEUI && (n->updated & SC_UPDATE_V_SCROLL || n->updated & SC_UPDATE_H_SCROLL))
 			[self syncScrollFrom: pane];
+		if ((n->nmhdr.code == SCN_UPDATEUI || n->nmhdr.code == SCN_ZOOM) && [_dock isPanelVisible: IDM_VIEW_DOC_MAP])
+			[(NppDocumentMapPanel*)[_dock panelForCommand: IDM_VIEW_DOC_MAP] scrollMap];
 		return;
 	}
 	switch (n->nmhdr.code)
@@ -1233,6 +1236,13 @@ static NSString* withThousands(long n)
 - (void)sendDocumentsChanged
 {
 	[NSNotificationCenter.defaultCenter postNotificationName: NppDocumentsChangedNotification object: self];
+}
+
+- (void)findInFilesInDirectory:(NSString*)dir
+{
+	NppFindReplaceDlg* d = self.findReplaceDlg;
+	[d showDialog: NppFindDialogFindInFiles];
+	[d setDirectory: dir filters: nil];
 }
 
 - (NppDockManager*)dock

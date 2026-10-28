@@ -157,6 +157,15 @@ void NppConfig::load()
 	if (!r)
 		return;
 
+	if (pugi::xml_node fb = r.child("FileBrowser"))
+	{
+		fileBrowserRoots.clear();
+		fileBrowserSelectedItem = fb.attribute("latestSelectedItem").as_string("");
+		for (pugi::xml_node n = fb.child("root"); n; n = n.next_sibling("root"))
+			if (const char* f = n.attribute("foldername").as_string(nullptr); f && *f)
+				fileBrowserRoots.push_back(f);
+	}
+
 	// Recent files
 	if (pugi::xml_node h = r.child("History"))
 	{
@@ -370,6 +379,15 @@ void NppConfig::save()
 {
 	const NppSettings& s = NppSettings::instance();
 	pugi::xml_node r = root(true);
+
+	{
+		pugi::xml_node fb = child(r, "FileBrowser", true);
+		while (pugi::xml_node n = fb.child("root"))
+			fb.remove_child(n);
+		setAttr(fb, "latestSelectedItem", fileBrowserSelectedItem.c_str());
+		for (const auto& p : fileBrowserRoots)
+			fb.append_child("root").append_attribute("foldername") = p.c_str();
+	}
 
 	pugi::xml_node h = child(r, "History", true);
 	setAttr(h, "nbMaxFile", nbMaxRecentFiles);
