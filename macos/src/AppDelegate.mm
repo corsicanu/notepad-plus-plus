@@ -53,6 +53,7 @@ static void enableNonBlockingAlerts()
 	NSMenu* _fileMenu;
 	NSMutableArray<NSMenuItem*>* _recentItems;
 	BOOL _noSession;   // test runs (--snapshot, --dump-menus, -nosession) leave the session alone
+	BOOL _testRun;     // --snapshot / --dump-menus: nothing in the settings folder is written
 }
 
 static NSMenuItem* item(NSString* title, SEL action, NSString* key, NSEventModifierFlags mods = NSEventModifierFlagCommand)
@@ -251,6 +252,7 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 			[_main runFindTestHook: c[0] value: c[1]];
 	}
 	_noSession = snapshot || dumpMenus || [args containsObject: @"-nosession"];
+	_testRun = snapshot || dumpMenus;
 	if (dumpMenus)
 	{
 		[self dumpMenu: NSApp.mainMenu depth: 0];
@@ -356,6 +358,8 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 		return NSTerminateCancel;
 	if (s._rememberLastSession && !_noSession)
 		[_main saveSessionToPath: [NSString stringWithUTF8String: NppConfig::instance().sessionPath().c_str()] withBackups: snapshot];
+	if (_testRun)
+		return NSTerminateNow;
 	[_main captureEditorSettings];
 	NppUdlManager::instance().save();
 	// Test runs leave the user's panel layout alone.
