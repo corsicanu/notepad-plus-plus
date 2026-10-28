@@ -6,6 +6,7 @@
 #import "NppPreferences.h"
 #import "NppWorkspacePanels.h"
 #import "NppFunctionList.h"
+#import "NppProjectPanel.h"
 
 #include "NppAsciiTable.h"
 #include "NppConfig.h"
@@ -483,6 +484,12 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 		case IDM_VIEW_FILEBROWSER: p = [[NppFolderAsWorkspacePanel alloc] initWithWindow: self]; side = NppDockLeft; break;
 		case IDM_VIEW_DOC_MAP: p = [[NppDocumentMapPanel alloc] initWithWindow: self]; break;
 		case IDM_VIEW_FUNC_LIST: p = [[NppFunctionListPanel alloc] initWithWindow: self]; break;
+		case IDM_VIEW_PROJECT_PANEL_1:
+		case IDM_VIEW_PROJECT_PANEL_2:
+		case IDM_VIEW_PROJECT_PANEL_3:
+			p = [[NppProjectPanel alloc] initWithWindow: self index: cmd - IDM_VIEW_PROJECT_PANEL_1];
+			side = NppDockLeft;
+			break;
 		default: return nil;
 	}
 	// The side the user left it on (DockingManager curr: 0 left, 1 right).
@@ -559,6 +566,18 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 		c.dockActiveTabs.emplace_back(cont, cont < 2 ? (int)[dock selectedIndexOfSide: (NppDockSide)cont] : -1);
 }
 
+// Modified workspaces are offered for saving before quitting.
+- (BOOL)confirmCloseProjectPanels
+{
+	for (int i = 0; i < 3; ++i)
+	{
+		NppProjectPanel* p = (NppProjectPanel*)[self.dock panelForCommand: IDM_VIEW_PROJECT_PANEL_1 + i];
+		if (p && ![p checkIfNeedSave])
+			return NO;
+	}
+	return YES;
+}
+
 - (BOOL)isPanelShown:(int)cmd
 {
 	return [self.dock isPanelVisible: cmd];
@@ -566,11 +585,14 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 
 + (void)registerPanelCommands:(std::unordered_map<int, NppCommandHandler>&)t
 {
-	for (int cmd : {IDM_EDIT_CLIPBOARDHISTORY_PANEL, IDM_EDIT_CHAR_PANEL, IDM_VIEW_DOCLIST, IDM_VIEW_FILEBROWSER, IDM_VIEW_DOC_MAP, IDM_VIEW_FUNC_LIST})
+	for (int cmd : {IDM_EDIT_CLIPBOARDHISTORY_PANEL, IDM_EDIT_CHAR_PANEL, IDM_VIEW_DOCLIST, IDM_VIEW_FILEBROWSER, IDM_VIEW_DOC_MAP, IDM_VIEW_FUNC_LIST,
+	                IDM_VIEW_PROJECT_PANEL_1, IDM_VIEW_PROJECT_PANEL_2, IDM_VIEW_PROJECT_PANEL_3})
 		t[cmd] = ^(NppMainWindow* w) { [w togglePanel: cmd]; };
 	t[IDM_VIEW_SWITCHTO_DOCLIST] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_DOCLIST]; };
 	t[IDM_VIEW_SWITCHTO_FILEBROWSER] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_FILEBROWSER]; };
 	t[IDM_VIEW_SWITCHTO_FUNC_LIST] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_FUNC_LIST]; };
+	for (int i = 0; i < 3; ++i)
+		t[IDM_VIEW_SWITCHTO_PROJECT_PANEL_1 + i] = ^(NppMainWindow* w) { [w focusPanel: IDM_VIEW_PROJECT_PANEL_1 + i]; };
 	// File > Open Folder as Workspace...
 	t[IDM_FILE_OPENFOLDERASWORKSPACE] = ^(NppMainWindow* w) {
 		NSOpenPanel* p = [NSOpenPanel openPanel];

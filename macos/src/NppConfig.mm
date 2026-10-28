@@ -157,6 +157,13 @@ void NppConfig::load()
 	if (!r)
 		return;
 
+	if (pugi::xml_node pp = r.child("ProjectPanels"))
+		for (pugi::xml_node n = pp.child("ProjectPanel"); n; n = n.next_sibling("ProjectPanel"))
+		{
+			int id = n.attribute("id").as_int(0);
+			if (id >= 0 && id <= 2)
+				projectPanelWorkspaces[id] = n.attribute("workSpaceFile").as_string("");
+		}
 	if (pugi::xml_node fb = r.child("FileBrowser"))
 	{
 		fileBrowserRoots.clear();
@@ -401,6 +408,18 @@ void NppConfig::save()
 	const NppSettings& s = NppSettings::instance();
 	pugi::xml_node r = root(true);
 
+	{
+		// writeProjectPanelsSettings
+		if (pugi::xml_node old = r.child("ProjectPanels"))
+			r.remove_child(old);
+		pugi::xml_node pp = r.append_child("ProjectPanels");
+		for (int i = 0; i < 3; ++i)
+		{
+			pugi::xml_node n = pp.append_child("ProjectPanel");
+			n.append_attribute("id") = i;
+			n.append_attribute("workSpaceFile") = projectPanelWorkspaces[i].c_str();
+		}
+	}
 	{
 		pugi::xml_node fb = child(r, "FileBrowser", true);
 		while (pugi::xml_node n = fb.child("root"))

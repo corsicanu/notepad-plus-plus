@@ -13,6 +13,7 @@
 + (void)installShortcutsXmlItemsIn:(NSMenu*)bar;
 - (void)restoreDockingState;
 - (void)captureDockingState;
+- (BOOL)confirmCloseProjectPanels;
 @end
 
 #include "LangManager.h"
@@ -340,6 +341,8 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 	const NppSettings& s = NppSettings::instance();
 	BOOL snapshot = s._isSnapshotMode && s._rememberLastSession;
 	if (!snapshot && ![_main confirmCloseAll])
+		return NSTerminateCancel;
+	if (![(id)_main confirmCloseProjectPanels])
 		return NSTerminateCancel;
 	if (s._rememberLastSession && !_noSession)
 		[_main saveSessionToPath: [NSString stringWithUTF8String: NppConfig::instance().sessionPath().c_str()] withBackups: snapshot];

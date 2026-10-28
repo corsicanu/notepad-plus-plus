@@ -205,6 +205,12 @@
 		[p panelDidHide];
 }
 
+- (void)refreshPanel:(int)cmd
+{
+	if ([self isPanelVisible: cmd])
+		[self refreshSide: _sideOf[@(cmd)].intValue];
+}
+
 - (void)togglePanel:(int)cmd
 {
 	if ([self isPanelVisible: cmd])

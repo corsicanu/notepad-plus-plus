@@ -32,6 +32,8 @@ typedef NS_ENUM(NSInteger, NppDockSide) {
 - (void)showPanel:(int)cmd;
 - (void)hidePanel:(int)cmd;
 - (void)togglePanel:(int)cmd;
+// Redraws a shown panel's side (caption / tab title changed).
+- (void)refreshPanel:(int)cmd;
 
 // Commands of the panels currently shown (for config.xml).
 - (NSArray<NSNumber*>*)visibleCommands;

@@ -64,6 +64,9 @@ public:
 	std::vector<DockPanelInfo> dockPanels;
 	std::vector<std::pair<int, int>> dockActiveTabs;   // (cont, activeTab)
 
+	// Project Panels (<ProjectPanels><ProjectPanel id="0" workSpaceFile=""/>).
+	std::string projectPanelWorkspaces[3];
+
 	// Folder as Workspace (<FileBrowser latestSelectedItem=""><root foldername=""/>).
 	std::vector<std::string> fileBrowserRoots;
 	std::string fileBrowserSelectedItem;
