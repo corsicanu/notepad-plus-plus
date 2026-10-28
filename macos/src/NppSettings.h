@@ -146,7 +146,7 @@ struct NppSettings
 	bool _checkHistoryFiles = false;
 	bool _langMenuCompact = true;
 	bool _backSlashIsEscapeCharacterForSql = true;
-	int _maintainIndent = 1;                    // 0 none, 1 basic, 2 advanced
+	int _maintainIndent = 2;                    // 0 none, 1 basic, 2 advanced
 	bool _enableTagsMatchHilite = true;
 	bool _enableTagAttrsHilite = true;
 	bool _enableHiliteNonHTMLZone = false;
@@ -169,6 +169,7 @@ struct NppSettings
 	bool _insertQuotes = false;
 	bool _insertDoubleQuotes = false;
 	bool _insertHtmlXmlTag = false;
+	std::vector<std::pair<char, char>> _matchedPairs;   // <GUIConfig name="auto-insert"><UserDefinePair open close>
 	int _multiInstSetting = 0;
 	bool _wordCharUseDefault = true;
 	std::string _wordCharsAdded;

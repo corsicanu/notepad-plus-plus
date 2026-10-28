@@ -63,6 +63,10 @@ mv "$OUT/MacroableCommands.inc.tmp" "$OUT/MacroableCommands.inc"
 awk '/^KeyIDNAME namedKeyArray\[\] = \{/{m=1; next} m&&/^};/{exit} m&&/^\{/' "$SRC/WinControls/shortcut/shortcut.cpp" > "$OUT/NamedKeys.inc.tmp"
 mv "$OUT/NamedKeys.inc.tmp" "$OUT/NamedKeys.inc"
 
-for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys; do
+# 11. Auto-completion list icons (AutoCompletion.cpp: FUNC_IMG_ID / BOX_IMG_ID XPMs).
+awk '/^static constexpr auto FUNC_IMG_ID/{m=1} m&&/^static constexpr size_t tagMaxLen/{exit} m' "$SRC/ScintillaComponent/AutoCompletion.cpp" > "$OUT/AutoCompletionImages.inc.tmp"
+mv "$OUT/AutoCompletionImages.inc.tmp" "$OUT/AutoCompletionImages.inc"
+
+for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys AutoCompletionImages; do
 	[ -s "$OUT/$f.inc" ] || { echo "gen_upstream: $f.inc is empty, upstream layout changed" >&2; exit 1; }
 done

@@ -100,4 +100,12 @@ enum
 - (void)saveCurrentMacroNamed:(NSString*)name;
 - (void)runUserCommand:(const std::string&)cmd;
 - (BOOL)isRecordingMacro;
+- (BOOL)isPlayingBackMacro;
+@end
+
+// Typing helpers (NppAutoComplete.mm).
+@interface NppMainWindow (AutoComplete)
+- (void)charAdded:(int)ch;
+- (void)callTipClicked:(int)direction;
+- (void)autoCompletionSelected:(SCNotification*)n;
 @end

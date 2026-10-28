@@ -195,6 +195,16 @@ void NppConfig::load()
 		s._findHistoryReplaces = readList(f, "Replace");
 	}
 
+	if (pugi::xml_node n = gui("auto-insert", false))
+	{
+		s._matchedPairs.clear();
+		for (pugi::xml_node p = n.child("UserDefinePair"); p; p = p.next_sibling("UserDefinePair"))
+		{
+			int open = p.attribute("open").as_int(-1), close = p.attribute("close").as_int(-1);
+			if (open >= 0 && open <= 127 && close >= 0 && close <= 127)
+				s._matchedPairs.emplace_back(static_cast<char>(open), static_cast<char>(close));
+		}
+	}
 	if (pugi::xml_node n = gui("shortcutsXmlHMAC", false))
 		shortcutsXmlHmac = n.attribute("value").as_string("");
 	if (pugi::xml_node n = gui("AppPosition", false))
@@ -394,6 +404,17 @@ void NppConfig::save()
 	writeList(f, "Find", s._findHistoryFinds);
 	writeList(f, "Replace", s._findHistoryReplaces);
 
+	{
+		pugi::xml_node ai = gui("auto-insert", true);
+		while (pugi::xml_node p = ai.child("UserDefinePair"))
+			ai.remove_child(p);
+		for (const auto& [open, close] : s._matchedPairs)
+		{
+			pugi::xml_node p = ai.append_child("UserDefinePair");
+			p.append_attribute("open") = static_cast<int>(open);
+			p.append_attribute("close") = static_cast<int>(close);
+		}
+	}
 	if (!shortcutsXmlHmac.empty())
 		setAttr(gui("shortcutsXmlHMAC", true), "value", shortcutsXmlHmac.c_str());
 

@@ -983,6 +983,15 @@ static NSString* withThousands(long n)
 		case SCN_MACRORECORD:
 			[self macroRecordNotification: n];
 			break;
+		case SCN_CHARADDED:
+			[self charAdded: n->ch];
+			break;
+		case SCN_CALLTIPCLICK:
+			[self callTipClicked: (int)n->position];
+			break;
+		case SCN_AUTOCSELECTION:
+			[self autoCompletionSelected: n];
+			break;
 		case SCN_SAVEPOINTREACHED:
 		case SCN_SAVEPOINTLEFT:
 			if (b)
@@ -1735,6 +1744,37 @@ static NSString* withThousands(long n)
 	if ([key isEqualToString: @"macrosave"])
 	{
 		[self saveCurrentMacroNamed: value];
+		return;
+	}
+	if ([key isEqualToString: @"type"])
+	{
+		// Typed like keystrokes: "\n" is Enter.
+		NSArray<NSString*>* parts = [value componentsSeparatedByString: @"\\n"];
+		for (NSUInteger p = 0; p < parts.count; ++p)
+		{
+			NSString* part = parts[p];
+			if (p > 0)
+			{
+				// Enter would accept an open completion list; a test types past it.
+				[_editor message: SCI_AUTOCCANCEL];
+				[_editor message: SCI_NEWLINE];
+			}
+			for (NSUInteger i = 0; i < part.length; ++i)
+				[_editor insertText: [part substringWithRange: NSMakeRange(i, 1)]];
+		}
+		return;
+	}
+	if ([key isEqualToString: @"state"])
+	{
+		std::string calltip;
+		if ([_editor message: SCI_CALLTIPACTIVE])
+		{
+			// No getter for the tip text: report the highlighted parameter range instead.
+			calltip = "active";
+		}
+		fprintf(stderr, "state: autocActive=%ld autocCurrent=%ld calltip=%s text=\"%s\"\n",
+			[_editor message: SCI_AUTOCACTIVE], [_editor message: SCI_AUTOCGETCURRENT], calltip.empty() ? "none" : calltip.c_str(),
+			[[_editor string] stringByReplacingOccurrencesOfString: @"\n" withString: @"\\n"].UTF8String);
 		return;
 	}
 	if ([key isEqualToString: @"run"])

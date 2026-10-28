@@ -88,11 +88,12 @@ $(OBJ)/lex/%.cxx.o: $(LEX)/%.cxx
 # Tables lifted from upstream sources (see tools/gen_upstream.sh).
 GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc \
             $(GEN)/ToolbarIcons.inc $(GEN)/TabContextMenu.inc $(GEN)/PrefPages.inc $(GEN)/MenuFolderPositions.inc \
-            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc
+            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc $(GEN)/AutoCompletionImages.inc
 $(GEN_INC): $(GEN)/.stamp
 $(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp $(NPP)/src/NppNotification.cpp \
              $(NPP)/src/WinControls/Preference/preferenceDlg.cpp $(NPP)/src/localization.cpp \
-             $(NPP)/src/NppCommands.cpp $(NPP)/src/WinControls/shortcut/shortcut.cpp
+             $(NPP)/src/NppCommands.cpp $(NPP)/src/WinControls/shortcut/shortcut.cpp \
+             $(NPP)/src/ScintillaComponent/AutoCompletion.cpp
 	@echo "  GEN   upstream tables"
 	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
 	@touch $@
@@ -140,6 +141,8 @@ resources: $(EXE)
 	@find $(NPP)/src \( -name '*.rc' -o -name '*_rc.h' -o -name '*Res.h' -o -name '*Rc.h' -o -name '*Resource.h' -o -name '*resource.h' -o -name resource.h -o -name menuCmdID.h \) -exec cp {} $(RES)/rc/ \;
 	@cp $(NPP)/installer/themes/*.xml $(RES)/themes/ 2>/dev/null || true
 	@cp $(NPP)/installer/nativeLang/*.xml $(RES)/localization/ 2>/dev/null || true
+	@mkdir -p $(RES)/autoCompletion
+	@cp $(NPP)/installer/APIs/*.xml $(RES)/autoCompletion/
 	@for n in info_bar_bg mac_cursor_busy mac_cursor_flipped; do \
 		[ -f $(RES)/$$n.tiff ] || tiffutil -cathidpicheck $(SCI)/cocoa/res/$$n.png $(SCI)/cocoa/res/$$n@2x.png -out $(RES)/$$n.tiff >/dev/null 2>&1; \
 	done

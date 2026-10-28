@@ -21,6 +21,7 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 @interface NppMainWindow (EditOpsAPI)
 + (void)registerEditOps:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerMacroCommands:(std::unordered_map<int, NppCommandHandler>&)t;
++ (void)registerAutoCompleteCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (BOOL)isShortcutsXmlCommand:(int)cmd;
 - (void)runShortcutsXmlCommand:(int)cmd;
 - (void)recordCommand:(int)cmd run:(void (^)(void))run;
@@ -699,6 +700,7 @@ namespace
 	t[IDM_FORUM] = openURL(@"https://community.notepad-plus-plus.org/");
 	t[IDM_ABOUT] = ^(NppMainWindow*) { [NSApp orderFrontStandardAboutPanel: nil]; };
 	[NppMainWindow registerMacroCommands: t];
+	[NppMainWindow registerAutoCompleteCommands: t];
 
 	return t;
 }
