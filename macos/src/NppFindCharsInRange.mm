@@ -1,5 +1,6 @@
 #import "NppFindCharsInRange.h"
 #import "NppRcDialog.h"
+#import "NppLocalization.h"
 
 #include "NppUpstream.h"
 #include "findCharsInRange_rc.h"
@@ -71,6 +72,7 @@ namespace
 	if (!_dlg)
 	{
 		_dlg = [[NppRcDialog alloc] initWithRC: @"findCharsInRange.rc" dialog: @"IDD_FINDCHARACTERS"];
+		[NppLocalization applyToDialog: _dlg node: @"FindCharsInRange"];
 		[_dlg setChecked: IDC_NONASCCI_RADIO value: YES];
 		[_dlg setChecked: ID_FINDCHAR_DIRDOWN value: YES];
 		[_dlg setText: IDC_RANGESTART_EDIT value: @"0"];

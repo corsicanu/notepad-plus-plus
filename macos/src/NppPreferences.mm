@@ -2,6 +2,7 @@
 #import "NppRcDialog.h"
 #import "NppTheme.h"
 #import "NppStyleConfigurator.h"
+#import "NppLocalization.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -79,13 +80,16 @@ namespace
 		page.hidden = YES;
 		[root addSubview: page];
 		[_pages addObject: page];
-		[titles addObject: [NSString stringWithUTF8String: p.title]];
+		NSString* t = [NppLocalization titleForNode: @"Preference" child: [NSString stringWithUTF8String: p.key]];
+		[titles addObject: t ?: [NSString stringWithUTF8String: p.title]];
 	}
 	_dlg.window.title = @"Preferences";
 	[_dlg setItems: titles forList: IDC_LIST_DLGTITLE];
 	[self fillLists];
 	[self buildBindings];
 	[self disableUnportable];
+	[NppLocalization applyToDialog: _dlg node: @"Preference"];
+	[_dlg setText: IDC_RADIO_DARKMODE_FOLLOWWINDOWS value: @"Follow macOS"];
 	[_dlg select: 0 inList: IDC_LIST_DLGTITLE];
 	[self showPageIndex: 0];
 }
@@ -107,7 +111,7 @@ namespace
 		if ([f hasSuffix: @".xml"])
 			[locs addObject: f.stringByDeletingPathExtension];
 	[_dlg setItems: locs forList: IDC_COMBO_LOCALIZATION];
-	NSUInteger en = [locs indexOfObject: @"english"];
+	NSUInteger en = [locs indexOfObject: [NppLocalization currentLanguageFile]];
 	if (en != NSNotFound)
 		[_dlg select: en inList: IDC_COMBO_LOCALIZATION];
 
@@ -558,6 +562,19 @@ namespace
 {
 	if (_loading)
 		return YES;
+	if (cid == IDC_COMBO_LOCALIZATION)
+	{
+		NSString* lang = [_dlg text: cid];
+		if (lang.length && ![lang isEqualToString: [NppLocalization currentLanguageFile]])
+		{
+			[NppLocalization selectLanguage: lang];
+			// Rebuild the dialog so it comes back translated.
+			[_dlg endWith: IDCANCEL];
+			_dlg = nil;
+			dispatch_async(dispatch_get_main_queue(), ^{ [self show]; });
+		}
+		return YES;
+	}
 	if (cid == IDC_LIST_DLGTITLE)
 	{
 		[self showPageIndex: [_dlg selectedIndex: cid]];

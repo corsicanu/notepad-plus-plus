@@ -1,6 +1,7 @@
 #import "NppStyleConfigurator.h"
 #import "NppRcDialog.h"
 #import "NppTheme.h"
+#import "NppLocalization.h"
 
 #include "LangManager.h"
 #include "NppSettings.h"
@@ -66,6 +67,7 @@ namespace
 		[root addSubview: w];
 		return w;
 	};
+	[NppLocalization applyToDialog: _dlg node: @"StyleConfig"];
 	_fg = well(IDC_FG_STATIC);
 	_bg = well(IDC_BG_STATIC);
 

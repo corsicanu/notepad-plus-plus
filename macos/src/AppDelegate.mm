@@ -7,6 +7,7 @@
 #import "NppMainWindow.h"
 #import "NppMenuBuilder.h"
 #import "NppTheme.h"
+#import "NppLocalization.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -83,8 +84,16 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 
 	// Notepad++'s own menus, straight from the resource script.
 	NSString* rc = [NSBundle.mainBundle pathForResource: @"Notepad_plus" ofType: @"rc"];
+	NSMenu* windowMenu = nil;
+	NSMenu* helpMenu = nil;
+	// The .rc holds two Language menus; like Notepad_plus::init, keep the
+	// compact (A-Z) one or the flat one according to langMenuCompact.
+	BOOL compact = NppSettings::instance()._langMenuCompact;
+	int languageSeen = 0;
 	for (NSMenuItem* top in [NppMenuBuilder mainMenuItemsFromRC: rc])
 	{
+		if ([top.title isEqualToString: @"Language"] && languageSeen++ != (compact ? 1 : 0))
+			continue;
 		[bar addItem: top];
 		NSString* t = top.title;
 		if ([t isEqualToString: @"File"])
@@ -93,13 +102,18 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 			_fileMenu.delegate = self;
 		}
 		else if ([t isEqualToString: @"Window"])
-			NSApp.windowsMenu = top.submenu;
+			windowMenu = top.submenu;
 		else if ([t isEqualToString: @"?"])
-			NSApp.helpMenu = top.submenu;
+			helpMenu = top.submenu;
 	}
 
 	[NppMenuBuilder applyDefaultShortcuts: bar];
+	[NppLocalization applyToMainMenu: bar topOffset: 1];
 	NSApp.mainMenu = bar;
+	// After the bar is installed, so AppKit doesn't add its own "Window" menu
+	// when the localized title differs.
+	NSApp.windowsMenu = windowMenu;
+	NSApp.helpMenu = helpMenu;
 }
 
 // Recent files sit in the File menu above "Exit", like Notepad++'s lastRecentFileList.
@@ -147,7 +161,11 @@ static NSMenuItem* command(NSString* title, int cmd, NSString* key = nil, NSEven
 {
 	NppConfig::instance().load();
 	LangManager::instance().load(NSBundle.mainBundle.resourcePath.fileSystemRepresentation);
+	[NppLocalization loadLanguage];
 	[self buildMenus];
+	// Changing the language rebuilds the menu bar from the .rc, then translates it.
+	[NSNotificationCenter.defaultCenter addObserverForName: NppLanguageChangedNotification object: nil queue: nil
+	                                            usingBlock: ^(NSNotification*) { [self buildMenus]; }];
 }
 
 - (void)applicationDidFinishLaunching:(NSNotification*)notification
