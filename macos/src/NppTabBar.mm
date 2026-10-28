@@ -129,6 +129,15 @@ namespace
 	return NSMakeRect(NSMaxX(r) - kPad - kCloseSize, (kTabHeight - kCloseSize) / 2 + 1, kCloseSize, kCloseSize);
 }
 
++ (NSImage*)imageForState:(NppTabState)state size:(CGFloat)size
+{
+	static NppTabBar* painter = [[NppTabBar alloc] initWithFrame: NSZeroRect];
+	return [NSImage imageWithSize: NSMakeSize(size, size) flipped: YES drawingHandler: ^BOOL(NSRect r) {
+		[painter drawStateIcon: state inRect: r];
+		return YES;
+	}];
+}
+
 - (void)drawStateIcon:(NppTabState)state inRect:(NSRect)r
 {
 	// Small floppy, like Notepad++'s saved (blue) / unsaved (red) / read-only (grey) tab icons.

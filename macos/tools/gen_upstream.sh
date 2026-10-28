@@ -67,6 +67,10 @@ mv "$OUT/NamedKeys.inc.tmp" "$OUT/NamedKeys.inc"
 awk '/^static constexpr auto FUNC_IMG_ID/{m=1} m&&/^static constexpr size_t tagMaxLen/{exit} m' "$SRC/ScintillaComponent/AutoCompletion.cpp" > "$OUT/AutoCompletionImages.inc.tmp"
 mv "$OUT/AutoCompletionImages.inc.tmp" "$OUT/AutoCompletionImages.inc"
 
-for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys AutoCompletionImages; do
+# 12. Character Panel table (asciiListView.cpp: getAscii, getHtmlName, getHtmlNumber, setValues).
+awk '/^wstring AsciiListView::getAscii/{m=1} m' "$SRC/WinControls/AnsiCharPanel/asciiListView.cpp" > "$OUT/AsciiListView.inc.tmp"
+mv "$OUT/AsciiListView.inc.tmp" "$OUT/AsciiListView.inc"
+
+for f in MenuIds WinKeyDefs ScintKeyDefs MenuID2LangType ToolbarIcons TabContextMenu PrefPages MenuFolderPositions MacroableCommands NamedKeys AutoCompletionImages AsciiListView; do
 	[ -s "$OUT/$f.inc" ] || { echo "gen_upstream: $f.inc is empty, upstream layout changed" >&2; exit 1; }
 done

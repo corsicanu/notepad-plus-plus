@@ -44,4 +44,7 @@ typedef NS_ENUM(NSInteger, NppTabState) {
 @property (nonatomic) BOOL drawTopBar;
 @property (nonatomic) BOOL showPinButton;
 
+// The saved / unsaved / read-only icon drawn on tabs.
++ (NSImage*)imageForState:(NppTabState)state size:(CGFloat)size;
+
 @end

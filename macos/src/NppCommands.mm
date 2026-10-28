@@ -22,6 +22,8 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 + (void)registerEditOps:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerMacroCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerAutoCompleteCommands:(std::unordered_map<int, NppCommandHandler>&)t;
++ (void)registerPanelCommands:(std::unordered_map<int, NppCommandHandler>&)t;
+- (BOOL)isPanelShown:(int)cmd;
 + (BOOL)isShortcutsXmlCommand:(int)cmd;
 - (void)runShortcutsXmlCommand:(int)cmd;
 - (void)recordCommand:(int)cmd run:(void (^)(void))run;
@@ -701,6 +703,7 @@ namespace
 	t[IDM_ABOUT] = ^(NppMainWindow*) { [NSApp orderFrontStandardAboutPanel: nil]; };
 	[NppMainWindow registerMacroCommands: t];
 	[NppMainWindow registerAutoCompleteCommands: t];
+	[NppMainWindow registerPanelCommands: t];
 
 	return t;
 }
@@ -1044,6 +1047,17 @@ static int textCodepage(NppBuffer* b)
 		case IDM_VIEW_ALL_CHARACTERS: check(sci(e, SCI_GETVIEWEOL) && sci(e, SCI_GETVIEWWS) != SCWS_INVISIBLE); break;
 		case IDM_VIEW_INDENT_GUIDE: check(sci(e, SCI_GETINDENTATIONGUIDES) != SC_IV_NONE); break;
 		case IDM_VIEW_ALWAYSONTOP: check(self.window.level == NSFloatingWindowLevel); break;
+		case IDM_EDIT_CLIPBOARDHISTORY_PANEL:
+		case IDM_EDIT_CHAR_PANEL:
+		case IDM_VIEW_DOCLIST:
+		case IDM_VIEW_FILEBROWSER:
+		case IDM_VIEW_DOC_MAP:
+		case IDM_VIEW_FUNC_LIST:
+		case IDM_VIEW_PROJECT_PANEL_1:
+		case IDM_VIEW_PROJECT_PANEL_2:
+		case IDM_VIEW_PROJECT_PANEL_3:
+			check([self isPanelShown: cmd]);
+			break;
 		case IDM_VIEW_SYNSCROLLV: check([self syncScroll: YES]); return [self otherViewVisible];
 		case IDM_VIEW_SYNSCROLLH: check([self syncScroll: NO]); return [self otherViewVisible];
 		case IDM_VIEW_SWITCHTO_OTHER_VIEW: return [self otherViewVisible];

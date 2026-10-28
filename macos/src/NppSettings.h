@@ -171,6 +171,9 @@ struct NppSettings
 	bool _insertHtmlXmlTag = false;
 	std::vector<std::pair<char, char>> _matchedPairs;   // <GUIConfig name="auto-insert"><UserDefinePair open close>
 	int _multiInstSetting = 0;
+	bool _fileSwitcherWithoutExtColumn = false;   // Document List columns
+	bool _fileSwitcherWithoutPathColumn = true;
+	bool _fileSwitcherDisableListViewGroups = false;
 	bool _wordCharUseDefault = true;
 	std::string _wordCharsAdded;
 	int _leftmostDelimiter = 40;

@@ -5,6 +5,7 @@
 #import "NppBuffer.h"
 #import "NppFinder.h"
 #import "NppFindReplaceDlg.h"
+#import "NppDock.h"
 #import "ScintillaView.h"
 
 #include <string>
@@ -78,6 +79,14 @@ enum
 - (void)setCurrentTabColor:(int)color;
 - (void)moveCurrentTabTo:(NSInteger)to;
 - (NSArray<ScintillaView*>*)allEditors;
+
+// Docking panels.
+@property (nonatomic, readonly) NppDockManager* dock;
+- (NSArray<NppBuffer*>*)buffersOfView:(int)view;
+- (void)activateBuffer:(NppBuffer*)b inView:(int)view;
+- (NSImage*)tabStateImageFor:(NppBuffer*)b;
+- (NSMenu*)documentListContextMenu;
+- (void)postDocumentsChanged;
 
 - (NppBuffer*)openSessionFile:(NSString*)file backup:(NSString*)backup encoding:(int)encoding;
 

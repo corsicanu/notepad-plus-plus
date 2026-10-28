@@ -5,6 +5,7 @@
 #import "NppContextMenus.h"
 #import "NppTheme.h"
 #import "NppPreferences.h"
+#import "NppPanels.h"
 
 #include "LangManager.h"
 #include "NppConfig.h"
@@ -81,6 +82,7 @@ namespace
 	NSView* _incBarHolder;
 	NSLayoutConstraint* _incBarHeight;
 
+	NppDockManager* _dock;
 	NppPane* _panes[2];
 	NppEditorProxy* _proxies[2];
 	int _activePane;
@@ -255,8 +257,12 @@ namespace
 	_toolbar.isChecked = ^BOOL(int cmd) { BOOL on = NO; [weakSelf commandState: cmd checked: &on]; return on; };
 	_toolbarHeight = [_toolbar.heightAnchor constraintEqualToConstant: _toolbar.preferredHeight];
 
+	// Docking panels around the editor area (DockingManager).
+	_dock = [[NppDockManager alloc] initWithCenter: _split];
+	NSView* dockView = _dock.container;
+
 	[content addSubview: _toolbar];
-	[content addSubview: _split];
+	[content addSubview: dockView];
 	[content addSubview: _incBarHolder];
 	[content addSubview: _statusBar];
 	[NSLayoutConstraint activateConstraints: @[
@@ -264,10 +270,10 @@ namespace
 		[_toolbar.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
 		[_toolbar.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
 		_toolbarHeight,
-		[_split.topAnchor constraintEqualToAnchor: _toolbar.bottomAnchor],
-		[_split.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
-		[_split.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
-		[_split.bottomAnchor constraintEqualToAnchor: _incBarHolder.topAnchor],
+		[dockView.topAnchor constraintEqualToAnchor: _toolbar.bottomAnchor],
+		[dockView.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
+		[dockView.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
+		[dockView.bottomAnchor constraintEqualToAnchor: _incBarHolder.topAnchor],
 		[_incBarHolder.leadingAnchor constraintEqualToAnchor: content.leadingAnchor],
 		[_incBarHolder.trailingAnchor constraintEqualToAnchor: content.trailingAnchor],
 		[_incBarHolder.bottomAnchor constraintEqualToAnchor: _statusBar.topAnchor],
@@ -444,6 +450,7 @@ namespace
 	if (index != _current)
 		[self saveViewState];
 	_current = index;
+	[self postDocumentsChanged];
 	NppBuffer* b = _buffers[index];
 
 	[_editor message: SCI_SETDOCPOINTER wParam: 0 lParam: reinterpret_cast<sptr_t>(b.document)];
@@ -820,6 +827,7 @@ namespace
 
 - (void)refreshTabs
 {
+	[self postDocumentsChanged];
 	NSMutableArray* tabs = [NSMutableArray array];
 	for (NppBuffer* b in _buffers)
 	{
@@ -1213,6 +1221,51 @@ static NSString* withThousands(long n)
 		block();
 	}
 	[self loadPane: active];
+}
+
+// Coalesced: many tab refreshes in one event loop turn give one notification.
+- (void)postDocumentsChanged
+{
+	[NSObject cancelPreviousPerformRequestsWithTarget: self selector: @selector(sendDocumentsChanged) object: nil];
+	[self performSelector: @selector(sendDocumentsChanged) withObject: nil afterDelay: 0];
+}
+
+- (void)sendDocumentsChanged
+{
+	[NSNotificationCenter.defaultCenter postNotificationName: NppDocumentsChangedNotification object: self];
+}
+
+- (NppDockManager*)dock
+{
+	return _dock;
+}
+
+- (NSArray<NppBuffer*>*)buffersOfView:(int)view
+{
+	if (view == _activePane)
+		return [_buffers copy];
+	return [self paneVisible: view] ? [_panes[view].buffers copy] : @[];
+}
+
+- (void)activateBuffer:(NppBuffer*)b inView:(int)view
+{
+	if ([self paneVisible: view])
+		[self switchToPane: view];
+	NSInteger i = [_buffers indexOfObject: b];
+	if (i != NSNotFound)
+		[self activateBuffer: i];
+	[self.window makeFirstResponder: _editor.content];
+}
+
+- (NSImage*)tabStateImageFor:(NppBuffer*)b
+{
+	NppTabState st = (b.readOnly || b.fileReadOnly) ? NppTabReadOnly : b.dirty ? NppTabUnsaved : NppTabSaved;
+	return [NppTabBar imageForState: st size: 14];
+}
+
+- (NSMenu*)documentListContextMenu
+{
+	return [NppContextMenus tabContextMenu];
 }
 
 - (void)refreshAllTabs

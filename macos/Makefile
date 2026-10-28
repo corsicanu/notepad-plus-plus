@@ -88,12 +88,12 @@ $(OBJ)/lex/%.cxx.o: $(LEX)/%.cxx
 # Tables lifted from upstream sources (see tools/gen_upstream.sh).
 GEN_INC  := $(GEN)/MenuIds.inc $(GEN)/WinKeyDefs.inc $(GEN)/ScintKeyDefs.inc $(GEN)/MenuID2LangType.inc \
             $(GEN)/ToolbarIcons.inc $(GEN)/TabContextMenu.inc $(GEN)/PrefPages.inc $(GEN)/MenuFolderPositions.inc \
-            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc $(GEN)/AutoCompletionImages.inc
+            $(GEN)/MacroableCommands.inc $(GEN)/NamedKeys.inc $(GEN)/AutoCompletionImages.inc $(GEN)/AsciiListView.inc
 $(GEN_INC): $(GEN)/.stamp
 $(GEN)/.stamp: tools/gen_upstream.sh $(NPP)/src/Notepad_plus.rc $(NPP)/src/Parameters.cpp $(NPP)/src/Notepad_plus.cpp $(NPP)/src/NppNotification.cpp \
              $(NPP)/src/WinControls/Preference/preferenceDlg.cpp $(NPP)/src/localization.cpp \
              $(NPP)/src/NppCommands.cpp $(NPP)/src/WinControls/shortcut/shortcut.cpp \
-             $(NPP)/src/ScintillaComponent/AutoCompletion.cpp
+             $(NPP)/src/ScintillaComponent/AutoCompletion.cpp $(NPP)/src/WinControls/AnsiCharPanel/asciiListView.cpp
 	@echo "  GEN   upstream tables"
 	@sh tools/gen_upstream.sh $(NPP)/src $(GEN)
 	@touch $@
