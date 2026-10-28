@@ -23,6 +23,7 @@ typedef void (^NppCommandHandler)(NppMainWindow* w);
 + (void)registerMacroCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerAutoCompleteCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 + (void)registerPanelCommands:(std::unordered_map<int, NppCommandHandler>&)t;
++ (void)registerHashCommands:(std::unordered_map<int, NppCommandHandler>&)t;
 - (BOOL)isPanelShown:(int)cmd;
 + (BOOL)isShortcutsXmlCommand:(int)cmd;
 - (void)runShortcutsXmlCommand:(int)cmd;
@@ -704,6 +705,7 @@ namespace
 	[NppMainWindow registerMacroCommands: t];
 	[NppMainWindow registerAutoCompleteCommands: t];
 	[NppMainWindow registerPanelCommands: t];
+	[NppMainWindow registerHashCommands: t];
 
 	return t;
 }

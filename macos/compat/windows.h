@@ -9,6 +9,7 @@
 #include <strings.h>
 #include <cassert>
 #include <cwchar>
+#include <string>
 #include <clocale>
 #include <xlocale.h>
 
@@ -190,6 +191,23 @@ inline int _strnicmp(const char* a, const char* b, size_t n) { return strncasecm
 // Locale-aware CRT names used by upstream (Sorters.h, Common.cpp).
 typedef locale_t _locale_t;
 inline int _wcsicmp(const wchar_t* a, const wchar_t* b) { return wcscasecmp(a, b); }
+// UTF-32 path and mode (ASCII) to UTF-8 for fopen.
+inline FILE* _wfopen(const wchar_t* path, const wchar_t* mode)
+{
+	auto narrow = [](const wchar_t* w) {
+		std::string out;
+		for (; *w; ++w)
+		{
+			char32_t c = static_cast<char32_t>(*w);
+			if (c < 0x80) out += static_cast<char>(c);
+			else if (c < 0x800) { out += static_cast<char>(0xC0 | (c >> 6)); out += static_cast<char>(0x80 | (c & 0x3F)); }
+			else if (c < 0x10000) { out += static_cast<char>(0xE0 | (c >> 12)); out += static_cast<char>(0x80 | ((c >> 6) & 0x3F)); out += static_cast<char>(0x80 | (c & 0x3F)); }
+			else { out += static_cast<char>(0xF0 | (c >> 18)); out += static_cast<char>(0x80 | ((c >> 12) & 0x3F)); out += static_cast<char>(0x80 | ((c >> 6) & 0x3F)); out += static_cast<char>(0x80 | (c & 0x3F)); }
+		}
+		return out;
+	};
+	return std::fopen(narrow(path).c_str(), narrow(mode).c_str());
+}
 inline _locale_t _create_locale(int, const char*) { return newlocale(LC_NUMERIC_MASK, "en_US.UTF-8", nullptr); }
 inline void _free_locale(_locale_t l) { if (l) freelocale(l); }
 inline double _wcstod_l(const wchar_t* s, wchar_t** end, _locale_t l) { return wcstod_l(s, end, l); }
